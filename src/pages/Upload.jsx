@@ -6,7 +6,7 @@ import Icon from '../components/Icon.jsx';
 import FilePreview from '../components/FilePreview.jsx';
 import { createBatch, existingRefs, finishBatch, uploadFile } from '../lib/api.js';
 import { DOC_TYPES, FIELDS, fieldLabel, fundsOf, typeOf } from '../lib/doctypes.js';
-import { bytes, money } from '../lib/format.js';
+import { bytes } from '../lib/format.js';
 import {
   MONTHS, SKIP_FILE, cellInvalid, detectMonth, detectYear, formatAmount, groupKey, normalizeDate, parseAmount, parseName, rowProblems,
 } from '../lib/names.js';
@@ -436,7 +436,6 @@ function FilePeek({ rows, docType, peek, setPeek, setCell, tidy }) {
 function StepUpload({ w, go, actor, restart, redraw }) {
   const t = typeOf(w.batch.docType);
   const totalBytes = w.files.reduce((s, f) => s + f.size, 0);
-  const totalAmount = w.rows.reduce((s, r) => s + (parseAmount(r.amount) || 0), 0);
   const repeated = Object.entries(w.rows.reduce((m, r) => { const k = String(r.refNo).trim(); if (k) m[k] = (m[k] || 0) + 1; return m; }, {})).filter(([, n]) => n > 1);
   const [error, setError] = useState('');
 
@@ -503,7 +502,6 @@ function StepUpload({ w, go, actor, restart, redraw }) {
             <dt>Filed at</dt><dd>{[w.batch.boxNo && `Box ${w.batch.boxNo}`, w.batch.location].filter(Boolean).join(' · ') || '—'}</dd>
             <dt>Records</dt><dd>{w.rows.length}</dd>
             <dt>Files</dt><dd>{w.files.length} ({bytes(totalBytes)})</dd>
-            {totalAmount > 0 && <><dt>Total amount</dt><dd>{money(totalAmount)}</dd></>}
           </dl>
         </div>
         <div>

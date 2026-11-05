@@ -64,7 +64,6 @@ export function FolderView() {
 
   if (error) return <div className="alert">{error}</div>;
   if (!b || !recs) return b === null && recs ? <div className="card empty">This folder no longer exists.</div> : <div className="spinner" />;
-  const total = recs.reduce((s, r) => s + (r.amount || 0), 0);
 
   const save = async () => {
     try { await updateBatchLocation(b, edit, actor); setEdit(null); load(); } catch (e) { setError(e.message); }
@@ -141,7 +140,6 @@ export function FolderView() {
             <li><span>Records</span><b>{recs.length}</b></li>
             <li><span>Files</span><b>{b.fileCount}</b></li>
             <li><span>Size</span><b>{bytes(b.totalBytes)}</b></li>
-            {total > 0 && <li><span>Total amount</span><b>{money(total)}</b></li>}
           </ul>
         </div>
       </div>

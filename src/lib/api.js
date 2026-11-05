@@ -245,10 +245,9 @@ export async function stats() {
   const soft = (p) => p.catch(() => null);
   const count = (q) => soft(getCountFromServer(q).then((s) => s.data().count));
   const total = (q, field) => soft(getAggregateFromServer(q, { t: sum(field) }).then((s) => s.data().t || 0));
-  const [records, batchCount, amount, bytes, files, byType, byYear, recent] = await Promise.all([
+  const [records, batchCount, bytes, files, byType, byYear, recent] = await Promise.all([
     count(recs),
     count(batches),
-    total(recs, 'amount'),
     total(batches, 'totalBytes'),
     total(batches, 'fileCount'),
     Promise.all(DOC_TYPES.map((t) => count(query(recs, where('docType', '==', t.code))).then((n) => ({ code: t.code, n })))),
@@ -256,7 +255,7 @@ export async function stats() {
     soft(listBatches(6)),
   ]);
   return {
-    records, batches: batchCount, amount, bytes, files,
+    records, batches: batchCount, bytes, files,
     byType: byType.filter((x) => x.n).sort((a, b) => b.n - a.n), byYear: byYear.filter((x) => x.n), recent: recent || [],
   };
 }

@@ -35,7 +35,6 @@ export default function Search() {
     const v = (r) => r[sort.key] ?? (sort.key === 'amount' ? -Infinity : '');
     return list.sort((a, b) => (typeof v(a) === 'number' && typeof v(b) === 'number' ? v(a) - v(b) : String(v(a)).localeCompare(String(v(b)), undefined, { numeric: true })) * sort.dir);
   }, [result, sort]);
-  const total = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const years = Array.from({ length: 40 }, (_, i) => new Date().getFullYear() + 1 - i);
   const filtered = KEYS.some((k) => f[k]);
@@ -88,7 +87,7 @@ export default function Search() {
       {result && (
         <>
           <div className="result-bar">
-            <span><b>{rows.length.toLocaleString()}</b> record{rows.length === 1 ? '' : 's'}{total ? <> · total {money(total)}</> : null}</span>
+            <span><b>{rows.length.toLocaleString()}</b> record{rows.length === 1 ? '' : 's'}</span>
             {result.capped && <span className="badge badge-yellow">Showing the first {SEARCH_LIMIT.toLocaleString()} matches: add a filter</span>}
           </div>
           {rows.length ? (
