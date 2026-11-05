@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// The archived files: archives/{batchId}/{recordId}/{path in the uploaded folder}
+// Who may do what follows the user's profile in Firestore (firestore.rules): every approved user
+// reads; the Records Officer and administrators upload (up to 200 MB a file); administrators delete.
+// The first time these rules are published, Firebase asks to let Storage read Firestore: allow it.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function profile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function isActive() {
+      return request.auth != null && profile().active == true;
+    }
+
+    match /archives/{batchId}/{recordId}/{path=**} {
+      allow read: if isActive();
+      allow create, update: if isActive() && profile().role in ['superadmin', 'admin', 'records']
+        && request.resource.size < 200 * 1024 * 1024;
+      allow delete: if isActive() && profile().role in ['superadmin', 'admin'];
+    }
+  }
+}

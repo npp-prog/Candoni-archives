@@ -1,6 +1,7 @@
 # Candoni Archives — Plan & Suggestions
 
-A digital archive for the MGO Candoni accounting office. The Records Officer
+A digital archive for the Municipal Government of Candoni, built on the same stack and design as DMS
+(React + Vite, Firebase, Netlify). The Records Officer
 uploads scanned archives **by folder**. Each folder becomes a batch with a
 minimum set of metadata (DV No., date, payee, amount, and so on), so any document
 can be found again in seconds.
@@ -11,7 +12,7 @@ can be found again in seconds.
 
 | Goal | How the app meets it |
 |------|-----------------------|
-| One central place for all archived files | Files are stored on the server under `storage/<year>/<type>/<batch>/…` and indexed in SQLite |
+| One central place for all archived files | Files are kept in Firebase Storage (`archives/<folder>/<record>/…`) and indexed in Firestore |
 | Fast upload of whole folders | Drag-and-drop or "Select folder" uploads every file in it, keeping the subfolder structure |
 | Minimum but consistent metadata | Required fields per document type (DV No., Date, Payee, Amount for DVs) are checked before upload |
 | Easy retrieval | Full-text search plus filters (type, year, fund, date range, amount range), with inline PDF/image preview |
@@ -20,11 +21,16 @@ can be found again in seconds.
 
 ## 2. Users & roles
 
+Anyone can sign up (email and password, or Google), but an account stays **waiting for approval**
+until an administrator approves it and gives it a role. The owner's address
+(npp@mgocandoniaccounting.org) becomes the **Superadmin** once verified.
+
 | Role | Can do |
 |------|--------|
-| **Admin** | Everything, plus manage users and delete records |
-| **Records Officer** | Upload folders, edit metadata |
-| **Viewer** (e.g. auditors, department heads) | Search, preview, download |
+| **Superadmin** | Everything, and gives the Admin role |
+| **Admin** | Everything: approves users, deletes records, Settings |
+| **Records Officer** | Uploads folders, edits details, adds files, reads the audit log |
+| **Viewer** (e.g. auditors, department heads) | Searches, previews and downloads |
 
 ## 3. Folder upload workflow (interactive wizard)
 
@@ -75,23 +81,30 @@ The list of types and required fields lives in one place
 ## 5. Architecture
 
 ```
-Browser (vanilla JS SPA)  ──HTTP/JSON──►  Node.js + Express  ──►  SQLite (data/archives.db)
-   folder picker / grid                     auth, API, audit        └─► storage/ (files on disk)
+Browser (React SPA on Netlify) ──► Firebase Authentication   (sign-in, Google)
+                                ──► Cloud Firestore            (users, batches, records, hashes, audit, settings)
+                                ──► Cloud Storage for Firebase (the scanned files)
 ```
 
-- **No build step** and no external database server, so it runs on any office PC
-  or small server with Node.js 22+.
-- **SQLite FTS5** full-text index over DV No., payee, particulars, and file names.
-- **Files** are never served from a guessable path. Downloads go through the API
-  after a permission check, and only PDFs and images are previewed inline.
+- **No server of our own.** Access is enforced by `firestore.rules` and `storage.rules`. Storage reads
+  each user's role from Firestore.
+- **Search** uses a list of search words kept on each record (`keywords`). Firestore narrows the
+  results by one word, year or type, and the browser applies the other filters, so no composite
+  indexes are needed.
+- **Dashboard figures** use Firestore aggregation queries (count and sum).
+- **Duplicates:** each file's SHA-256 is computed in the browser and stored in `hashes/{sha256}`.
+- **Same design as DMS:** `src/styles.css` is the DMS stylesheet, with the same Inter font, seal,
+  icons, sign-in and approval pages. It also follows the DMS conventions: no sample values in
+  fields, no description under page titles, and the searchable `Select` for dropdowns.
 
 ### Data model
 
-- `batches`: one per uploaded folder (batch metadata, uploader, time)
-- `records`: one per document/transaction (DV No., date, payee, amount…)
-- `files`: physical files (original path in folder, stored path, size, SHA-256)
-- `users`, `sessions`: authentication
-- `audit_log`: who did what, when
+- `batches`: one per uploaded folder (batch details, uploader, counts, status)
+- `records`: one per document or transaction (DV No., date, payee, amount…), with its files
+- `hashes`: one per file content (finds identical files)
+- `users`: accounts and roles
+- `audit`: who did what, when (never changed)
+- `meta/settings`: funds
 
 ## 6. Screens
 
@@ -125,14 +138,14 @@ Browser (vanilla JS SPA)  ──HTTP/JSON──►  Node.js + Express  ──►
 
 ## 8. Operational suggestions
 
-- **Backups:** back up `data/` and `storage/` every day (e.g. a scheduled copy to an
-  external drive plus one offsite copy). Test a restore every quarter.
+- **Backups:** Firebase keeps the data redundantly, but keep your own copy too. Download each
+  folder's ZIP (Uploaded Folders → Download ZIP) to an external drive. Phase 2 could add a
+  scheduled backup to Google Drive, as DMS does.
 - **Scanning standard:** PDF/A, 300 dpi, one PDF per DV including its attachments,
   and a file name of `DVNo_Payee.pdf` (e.g. `100-2026-01-0001_JuanDelaCruz.pdf`), so
   auto-detect fills in most fields.
 - **Folder convention:** `FY2026/01-January/100-2026-01-0001/…`
-- **Security:** run it on the office LAN only, or behind HTTPS if exposed. Change the
-  default admin password on first login. Give each person their own account; no shared
-  logins.
+- **Security:** give each person their own account (no shared logins), and deactivate accounts
+  of staff who leave. The app signs out after 60 minutes without activity.
 - **Data privacy:** DVs contain personal data (RA 10173). Limit Viewer accounts, and use
   the audit log to show who accessed what.
