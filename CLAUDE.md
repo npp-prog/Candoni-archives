@@ -7,7 +7,7 @@
 - **No example data in fields:** no "e.g. …" placeholders or sample values; a placeholder may only say
   what to do ("Search…"). Explanations go in help text under the field.
 - **No description under page titles.**
-- **Roles:** keep `src/lib/roles.js`, `firestore.rules` and `storage.rules` in sync. After changing a
-  rules file, the live site needs it republished in the Firebase console (or `npm run deploy:rules`).
+- **Roles:** keep `src/lib/roles.js`, `firestore.rules` and `storage.rules` in sync. Rules changes
+  are published by `.github/workflows/publish-rules.yml` when they reach `main` (once its secret is set).
 - **Tests:** `npm test`; rules: `npm run emulators`, `node scripts/seed-local.mjs`, `npm run test:rules`;
   build: `npm run build`.
