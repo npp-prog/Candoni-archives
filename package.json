@@ -1,0 +1,28 @@
+{
+  "name": "candoni-archives",
+  "version": "1.0.0",
+  "description": "Digital archives app for MGO Candoni: folder upload with DV metadata, search, preview and audit log",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/npp-prog/Candoni-archives.git"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/npp-prog/Candoni-archives/issues"
+  },
+  "homepage": "https://github.com/npp-prog/Candoni-archives#readme",
+  "dependencies": {
+    "express": "^4.22.3",
+    "multer": "^2.5.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  }
+}
