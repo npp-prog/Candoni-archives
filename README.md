@@ -19,11 +19,11 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
   5. *Upload*: progress bar, 3 files at a time, retry of failed files. It warns when a DV No. is
      already archived or a file is identical to one in the archive (SHA-256).
 - **Search Archives**: by reference no., payee, particulars, OBR/check no. or file name, with
-  filters for type, year, fund, date and amount, sortable columns, totals and CSV export.
+  filters for type, year, fund, date and amount, sortable columns and CSV export.
 - **Record page**: details, PDF/image preview, download, editing (Records Officer), adding
   missing files, and history.
 - **Uploaded Folders**: each upload with where its paper is filed, its records, and a ZIP download.
-- **Dashboard**: totals (records, files, storage, amount), records by type and year, recent uploads.
+- **Dashboard**: totals (records, files, folders, storage), records by type and year, recent uploads.
 - **Users**: new accounts wait for approval. Roles: Superadmin (owner), Admin, Records Officer and Viewer.
 - **Audit Log**: who uploaded, viewed, downloaded, edited or deleted what. It is never changed.
 - **Settings**: the list of funds.
