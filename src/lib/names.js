@@ -60,14 +60,16 @@ export function detectMonth(s) {
 }
 
 // A cell is wrong when a required value is missing, or a date or amount cannot be read.
+// With no type chosen yet, nothing else counts as required (the type comes first).
 export function cellInvalid(docType, row, key) {
   const v = String(row[key] ?? '').trim();
-  if (!v) return typeOf(docType).required.includes(key);
+  if (!v) return Boolean(docType) && typeOf(docType).required.includes(key);
   if (key === 'docDate') return !normalizeDate(v);
   if (key === 'amount') return parseAmount(v) === null;
   return false;
 }
-export const rowProblems = (docType, row) => FIELDS.filter((k) => cellInvalid(docType, row, k));
+// 'docType' first when the record's type is not chosen yet.
+export const rowProblems = (docType, row) => [...(docType ? [] : ['docType']), ...FIELDS.filter((k) => cellInvalid(docType, row, k))];
 
 // Files skipped when a folder is read: hidden and system files.
 export const SKIP_FILE = /^(\.|~\$)|^(thumbs\.db|desktop\.ini)$/i;

@@ -12,9 +12,12 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
 
 - **Upload Folder** (Records Officer, Admin), a 5-step wizard:
   1. *Select folder*: drop a folder or choose one; subfolders are kept, system files left out.
-  2. *Folder details*: document type, fiscal year, month, fund, box no., shelf/location.
+  2. *Folder details*: the **main document type** (what the folder is filed as, e.g. DV), fiscal year, month, fund, box no., shelf/location.
   3. *Group files*: each subfolder, each top-level subfolder, each file, or the whole folder becomes one record.
-  4. *Fill in details*: a grid **pre-filled from file names** (`100-2026-01-0001_Payee Name_12,500.00.pdf`).
+  4. *Fill in details*: the uploader states the **type of each document** (the DV, or a supporting document
+     such as the OBR, PO, invoice, delivery receipt or IAR), and the details it needs follow its type. The grid is
+     **pre-filled from file names** (`100-2026-01-0001_Payee Name_12,500.00.pdf`), and a record's file opens in a
+     pop-up beside its fields.
      Required fields show in red. You can fill down, paste rows from Excel, and move down with Enter.
   5. *Upload*: progress bar, 3 files at a time, retry of failed files. It warns when a DV No. is
      already archived or a file is identical to one in the archive (SHA-256).
@@ -148,7 +151,7 @@ npm run build
 src/firebase-config.js   the Firebase project's web config
 src/lib/api.js           everything that reads or writes Firestore and Storage
 src/lib/names.js         reading DV No./date/payee/amount from names, checks, search words, CSV
-src/lib/doctypes.js      document types and their required details (edit to customise)
+src/lib/doctypes.js      document types (main and supporting) and their required details (edit to customise)
 src/pages/Upload.jsx     the folder upload wizard
 src/styles.css           the DMS design (only the rules this app uses); src/archives.css: archive-specific parts
 firestore.rules          who may read and write what (keep roles in sync with src/lib/roles.js)

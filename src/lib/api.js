@@ -90,12 +90,14 @@ function recordFields(row) {
 // ---------- uploading a folder ----------
 
 // Reference nos. already in the archive (to warn before uploading).
-export async function existingRefs(docType, refNos) {
-  const keys = [...new Set(refNos.map((r) => String(r || '').trim().toLowerCase()).filter(Boolean))];
+// rows: [{ docType, refNo }]; a match is the same reference no. on a record of the same type.
+export async function existingRefs(rows) {
+  const want = new Set(rows.filter((r) => String(r.refNo || '').trim()).map((r) => `${r.docType}|${String(r.refNo).trim().toLowerCase()}`));
+  const keys = [...new Set([...want].map((k) => k.slice(k.indexOf('|') + 1)))];
   const found = [];
   for (let i = 0; i < keys.length; i += 30) {
     const snap = await getDocs(query(collection(db, 'records'), where('refKey', 'in', keys.slice(i, i + 30))));
-    snap.docs.forEach((d) => { if (d.data().docType === docType) found.push({ id: d.id, ...d.data() }); });
+    snap.docs.forEach((d) => { if (want.has(`${d.data().docType}|${d.data().refKey}`)) found.push({ id: d.id, ...d.data() }); });
   }
   return found;
 }
@@ -118,7 +120,7 @@ export async function createBatch(batch, rows, expectedFiles, actor) {
       const r = doc(collection(db, 'records'));
       const f = recordFields(row);
       wb.set(r, {
-        batchId: batchRef.id, folderName: b.folderName, groupKey: clean(row.key, 500), docType: b.docType, ...f,
+        batchId: batchRef.id, folderName: b.folderName, groupKey: clean(row.key, 500), docType: row.docType, ...f,
         fund: b.fund, fiscalYear: year || (f.docDate ? Number(f.docDate.slice(0, 4)) : null), month: b.month,
         boxNo: b.boxNo, location: b.location, files: [], fileCount: 0, keywords: keywordsOf(f),
         createdBy: actor.uid, createdByName: b.byName, createdAt: serverTimestamp(),
@@ -264,9 +266,11 @@ export async function stats() {
 export async function updateRecord(record, row, actor) {
   const f = recordFields(row);
   const changes = {};
+  const docType = row.docType || record.docType;
+  if (docType !== record.docType) changes.docType = { from: record.docType, to: docType };
   for (const k of [...FIELDS]) if (String(record[k] ?? '') !== String(f[k] ?? '')) changes[k] = { from: record[k] ?? null, to: f[k] };
   await updateDoc(doc(db, 'records', record.id), {
-    ...f, keywords: keywordsOf({ ...f, files: record.files }), updatedAt: nowIso(), updatedBy: actor.displayName || actor.email,
+    docType, ...f, keywords: keywordsOf({ ...f, files: record.files }), updatedAt: nowIso(), updatedBy: actor.displayName || actor.email,
   });
   audit(actor, 'edit_record', { entity: 'record', entityId: record.id, label: f.refNo || record.refNo, details: changes });
 }

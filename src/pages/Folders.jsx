@@ -32,7 +32,7 @@ export default function Folders() {
       {list && (shown.length ? (
         <div className="card table-card">
           <table className="data-table">
-            <thead><tr><th>Folder</th><th>Type</th><th>FY</th><th>Fund</th><th>Filed at</th><th className="right">Records</th><th className="right">Files</th><th className="right">Size</th><th>Status</th><th>Uploaded</th></tr></thead>
+            <thead><tr><th>Folder</th><th>Main type</th><th>FY</th><th>Fund</th><th>Filed at</th><th className="right">Records</th><th className="right">Files</th><th className="right">Size</th><th>Status</th><th>Uploaded</th></tr></thead>
             <tbody>{shown.map((b) => (
               <tr key={b.id}>
                 <td><Link to={`/folders/${b.id}`}>{b.folderName}</Link></td><td>{b.docType}</td><td>{b.fiscalYear || ''}</td><td className="small">{b.fund}</td>
@@ -124,7 +124,7 @@ export function FolderView() {
             </div>
           ) : (
             <dl className="details">
-              <dt>Document type</dt><dd>{typeName(b.docType)}</dd>
+              <dt>Main document type</dt><dd>{typeName(b.docType)}</dd>
               <dt>Fiscal year</dt><dd>{b.fiscalYear || '—'}{b.month ? ` · ${MONTHS[b.month - 1]}` : ''}</dd>
               <dt>Fund</dt><dd>{b.fund || '—'}</dd>
               <dt>Box no.</dt><dd>{b.boxNo || '—'}</dd>
@@ -147,9 +147,10 @@ export function FolderView() {
         <div className="card-head pad"><h3>Records in this folder</h3></div>
         {recs.length ? (
           <table className="data-table clickable-rows">
-            <thead><tr><th>Reference No.</th><th>Date</th><th>Payee</th><th>Particulars</th><th className="right">Amount</th><th className="right">Files</th></tr></thead>
+            <thead><tr><th>Type</th><th>Reference No.</th><th>Date</th><th>Payee</th><th>Particulars</th><th className="right">Amount</th><th className="right">Files</th></tr></thead>
             <tbody>{recs.map((r) => (
               <tr key={r.id} onClick={() => navigate(`/records/${r.id}`)}>
+                <td><span className="badge badge-gold" title={typeName(r.docType)}>{r.docType}</span></td>
                 <td><Link to={`/records/${r.id}`} onClick={(e) => e.stopPropagation()}>{r.refNo || r.groupKey}</Link></td>
                 <td className="nowrap">{day(r.docDate)}</td><td>{r.payee}</td><td className="small clip">{r.particulars}</td>
                 <td className="right nowrap num">{money(r.amount)}</td><td className="right">{r.fileCount}</td>

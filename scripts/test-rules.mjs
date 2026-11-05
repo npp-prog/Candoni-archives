@@ -61,10 +61,12 @@ await ok(getDocs(collection(viewer.db, 'records')), 'Viewer reads records');
 await denied(addDoc(collection(viewer.db, 'batches'), batchData(viewer.uid)), 'Viewer uploads');
 await denied(addDoc(collection(records.db, 'batches'), batchData(owner.uid)), 'upload in someone else\'s name');
 const b = await ok(addDoc(collection(records.db, 'batches'), batchData(records.uid)), 'Records Officer creates a folder');
-await denied(addDoc(collection(records.db, 'records'), { ...recordData(records.uid, b.id), docType: 'HACK' }), 'unknown document type');
+await denied(addDoc(collection(records.db, 'records'), { ...recordData(records.uid, b.id), docType: 'not a type' }), 'malformed document type');
 const r = await ok(addDoc(collection(records.db, 'records'), recordData(records.uid, b.id)), 'Records Officer creates a record');
 await denied(updateDoc(doc(records.db, 'records', r.id), { createdBy: viewer.uid }), 'change who uploaded');
 await ok(updateDoc(doc(records.db, 'records', r.id), { payee: 'Edited' }), 'Records Officer edits details');
+await ok(updateDoc(doc(records.db, 'records', r.id), { docType: 'OBR' }), 'Records Officer changes the document type');
+await denied(updateDoc(doc(records.db, 'records', r.id), { docType: 'bad type' }), 'malformed type on edit');
 await denied(updateDoc(doc(viewer.db, 'records', r.id), { payee: 'Viewer edit' }), 'Viewer edits details');
 
 const path = `archives/${b.id}/${r.id}/test.pdf`;
