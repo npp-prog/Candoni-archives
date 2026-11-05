@@ -51,6 +51,17 @@ service cloud.firestore {
     function isTypeCode(v) {
       return v is string && v.matches('^[A-Z]{2,12}$');
     }
+    // A folder's identity: name (capitals and spaces ignored), main document type and fund. It names the
+    // folder's lock (folderLocks/{id}). Same as folderLockId in src/lib/names.js: change both together.
+    function keyPart(v) {
+      return v == null ? '' : v.lower().replace('[ \\t\\n\\r\\f]+', ' ').replace('^ | $', '').replace('/', '_');
+    }
+    function folderKeyOf(b) {
+      return keyPart(b.folderName) + '|' + b.docType + '|' + keyPart(b.get('fund', null));
+    }
+    function batchPath(id) {
+      return /databases/$(database)/documents/batches/$(id);
+    }
 
     // ---- Accounts ----
     match /users/{uid} {
@@ -97,13 +108,30 @@ service cloud.firestore {
         && isTypeCode(request.resource.data.docType)
         && request.resource.data.status == 'uploading'
         && request.resource.data.fileCount == 0 && request.resource.data.totalBytes == 0
+        && optStr(request.resource.data, 'fund', 100)
         && optStr(request.resource.data, 'boxNo', 60) && optStr(request.resource.data, 'location', 200)
-        && optStr(request.resource.data, 'remarks', 2000);
+        && optStr(request.resource.data, 'remarks', 2000)
+        // created together with its lock: no other folder has the same name, type and fund
+        && getAfter(/databases/$(database)/documents/folderLocks/$(folderKeyOf(request.resource.data))).data.batchId == id;
+      // name, type and fund never change (the lock is named after them)
       allow update: if canUpload()
         && changed().hasOnly(['status', 'fileCount', 'recordCount', 'totalBytes', 'expectedFiles', 'boxNo', 'location', 'remarks', 'updatedAt'])
         && request.resource.data.status in ['uploading', 'complete', 'incomplete']
         && optStr(request.resource.data, 'boxNo', 60) && optStr(request.resource.data, 'location', 200)
         && optStr(request.resource.data, 'remarks', 2000);
+      allow delete: if isAdmin();
+    }
+
+    // ---- Folder locks: one per folder identity (folderKeyOf). A lock is only ever created, never replaced,
+    // so a second folder with the same name, type and fund cannot be created. A folder made before the
+    // locks existed gets its lock later (the app adds it). ----
+    match /folderLocks/{key} {
+      allow read: if isActive();
+      allow create: if canUpload()
+        && request.resource.data.keys().hasOnly(['batchId', 'at'])
+        && request.resource.data.batchId is string
+        && existsAfter(batchPath(request.resource.data.batchId))
+        && folderKeyOf(getAfter(batchPath(request.resource.data.batchId)).data) == key;
       allow delete: if isAdmin();
     }
 

@@ -116,6 +116,7 @@ Browser (React SPA on Netlify) ──► Firebase Authentication   (sign-in, Goo
 - `batches`: one per uploaded folder (batch details, uploader, counts, status)
 - `records`: one per document or transaction (DV No., date, payee, amount…), with its files
 - `hashes`: one per file content (finds identical files)
+- `folderLocks`: one per folder name + main type + fund (the rules refuse a second such folder)
 - `users`: accounts and roles
 - `audit`: who did what, when (never changed)
 - `meta/settings`: funds

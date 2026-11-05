@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import { initializeApp } from 'firebase/app';
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import {
-  addDoc, collection, connectFirestoreEmulator, deleteDoc, doc, getDoc, getDocs, getFirestore, serverTimestamp, setDoc, updateDoc,
+  addDoc, collection, connectFirestoreEmulator, deleteDoc, doc, getDoc, getDocs, getFirestore, serverTimestamp, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { connectStorageEmulator, deleteObject, getStorage, ref, uploadBytes } from 'firebase/storage';
 import { DEMO } from './seed-local.mjs';
+import { folderLockId } from '../src/lib/names.js';
 
 let n = 0;
 async function as(who) {
@@ -27,10 +28,20 @@ const denied = async (p, what) => {
 };
 const ok = async (p, what) => { try { return await p; } catch (e) { throw new Error(`should be allowed: ${what} (${e.code})`); } };
 
-const batchData = (uid) => ({
-  folderName: 'Test', docType: 'DV', fiscalYear: 2026, month: 1, fund: 'General Fund', boxNo: null, location: null, remarks: null,
-  status: 'uploading', expectedFiles: 1, fileCount: 0, recordCount: 1, totalBytes: 0, by: uid, byName: 'x', createdAt: serverTimestamp(),
+const RUN = `Test ${Date.now()}`; // a folder name of its own each run
+const batchData = (uid, extra = {}) => ({
+  folderName: RUN, docType: 'DV', fiscalYear: 2026, month: 1, fund: 'General Fund', boxNo: null, location: null, remarks: null,
+  status: 'uploading', expectedFiles: 1, fileCount: 0, recordCount: 1, totalBytes: 0, by: uid, byName: 'x', createdAt: serverTimestamp(), ...extra,
 });
+// A folder as the app makes it: the folder and its lock in one write. lockId overrides the lock's name.
+async function createFolder(db, data, lockId = folderLockId(data)) {
+  const ref = doc(collection(db, 'batches'));
+  const wb = writeBatch(db);
+  wb.set(ref, data);
+  wb.set(doc(db, 'folderLocks', lockId), { batchId: ref.id, at: new Date().toISOString() });
+  await wb.commit();
+  return ref;
+}
 const recordData = (uid, batchId) => ({
   batchId, folderName: 'Test', groupKey: 'g', docType: 'DV', refNo: '100-2026-01-9999', refKey: '100-2026-01-9999', docDate: '2026-01-15',
   payee: 'Rule Test', amount: 100, particulars: null, orsNo: null, checkNo: null, respCenter: null, fund: null, fiscalYear: 2026, month: 1,
@@ -58,9 +69,23 @@ await denied(getDocs(collection(pending.db, 'records')), 'unapproved user reads 
 await ok(getDocs(collection(viewer.db, 'records')), 'Viewer reads records');
 
 // Uploading
-await denied(addDoc(collection(viewer.db, 'batches'), batchData(viewer.uid)), 'Viewer uploads');
-await denied(addDoc(collection(records.db, 'batches'), batchData(owner.uid)), 'upload in someone else\'s name');
-const b = await ok(addDoc(collection(records.db, 'batches'), batchData(records.uid)), 'Records Officer creates a folder');
+await denied(createFolder(viewer.db, batchData(viewer.uid)), 'Viewer uploads');
+await denied(createFolder(records.db, batchData(owner.uid)), 'upload in someone else\'s name');
+await denied(addDoc(collection(records.db, 'batches'), batchData(records.uid)), 'a folder without its lock');
+await denied(createFolder(records.db, batchData(records.uid), 'made-up|DV|key'), 'a folder with a lock under another name');
+const b = await ok(createFolder(records.db, batchData(records.uid)), 'Records Officer creates a folder');
+
+// One folder per name, type and fund
+await denied(createFolder(records.db, batchData(records.uid)), 'the same folder again');
+await denied(createFolder(owner.db, batchData(owner.uid, { folderName: `  ${RUN.toUpperCase()} `, fund: 'GENERAL  FUND' })), 'the same folder with other capitals and spaces');
+await denied(setDoc(doc(records.db, 'folderLocks', folderLockId(batchData(records.uid))), { batchId: 'other', at: 'x' }), 'replace a folder\'s lock');
+const other = await ok(createFolder(records.db, batchData(records.uid, { fund: 'Trust Fund' })), 'same name, another fund');
+await denied(updateDoc(doc(records.db, 'batches', other.id), { fund: 'General Fund' }), 'change a folder\'s fund');
+// a folder made before the locks: an admin frees the lock, then it is added again (as the app does)
+await ok(deleteDoc(doc(owner.db, 'folderLocks', folderLockId(batchData(records.uid, { fund: 'Trust Fund' })))), 'admin removes a lock');
+await denied(setDoc(doc(records.db, 'folderLocks', 'wrong|DV|'), { batchId: other.id, at: 'x' }), 'a lock not named after its folder');
+await ok(setDoc(doc(records.db, 'folderLocks', folderLockId(batchData(records.uid, { fund: 'Trust Fund' }))), { batchId: other.id, at: 'x' }), 'lock added for an existing folder');
+await denied(deleteDoc(doc(records.db, 'folderLocks', folderLockId(batchData(records.uid)))), 'Records Officer removes a lock');
 await denied(addDoc(collection(records.db, 'records'), { ...recordData(records.uid, b.id), docType: 'not a type' }), 'malformed document type');
 const r = await ok(addDoc(collection(records.db, 'records'), recordData(records.uid, b.id)), 'Records Officer creates a record');
 await denied(updateDoc(doc(records.db, 'records', r.id), { createdBy: viewer.uid }), 'change who uploaded');

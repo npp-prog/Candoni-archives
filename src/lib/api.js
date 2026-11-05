@@ -6,7 +6,7 @@ import { deleteObject, getBlob, getDownloadURL, ref, uploadBytesResumable } from
 import { db, storage } from '../firebase.js';
 import { DOC_TYPES, FIELDS } from './doctypes.js';
 import { isOwnerEmail } from './owner.js';
-import { keywordsOf, matchesWords, normalizeDate, parseAmount, safePath, wordsOf } from './names.js';
+import { folderLockId, keywordsOf, matchesWords, normalizeDate, parseAmount, safePath, wordsOf } from './names.js';
 
 const nowIso = () => new Date().toISOString();
 const clean = (v, max = 200) => { const s = String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').trim(); return s ? s.slice(0, max) : null; };
@@ -106,6 +106,12 @@ export async function existingRefs(rows) {
 const folderKey = (name) => String(name || '').toLowerCase().replace(/\s+/g, ' ').trim();
 export async function findSameFolder(batch) {
   const name = clean(batch.folderName);
+  // the folder's lock names it, when it has one
+  const lock = await getDoc(doc(db, 'folderLocks', folderLockId({ ...batch, folderName: name, fund: clean(batch.fund, 100) })));
+  if (lock.exists()) {
+    const b = await getDoc(doc(db, 'batches', lock.data().batchId));
+    if (b.exists()) return withId(b);
+  }
   const queries = [query(collection(db, 'batches'), where('folderName', '==', name))];
   // the same name typed with other capitals or spaces: among the folders of that fiscal year
   if (Number(batch.fiscalYear)) queries.push(query(collection(db, 'batches'), where('fiscalYear', '==', Number(batch.fiscalYear))));
@@ -152,10 +158,36 @@ export async function createBatch(batch, rows, expectedFiles, actor) {
     by: actor.uid, byName: actor.displayName || actor.email, createdAt: serverTimestamp(),
   };
   const batchRef = doc(collection(db, 'batches'));
-  await setDoc(batchRef, b);
+  // the folder and its lock in one write: the rules refuse it when the lock already exists
+  const wb = writeBatch(db);
+  wb.set(batchRef, b);
+  wb.set(doc(db, 'folderLocks', folderLockId(b)), { batchId: batchRef.id, at: nowIso() });
+  try {
+    await wb.commit();
+  } catch (e) {
+    const again = e.code === 'permission-denied' ? await findSameFolder(batch).catch(() => null) : null;
+    if (!again) throw e;
+    const err = new Error(`The folder "${again.folderName}" (${again.docType}${again.fund ? `, ${again.fund}` : ''}) was just created by ${again.byName}. Add the files to it instead.`);
+    err.code = 'folder-exists'; err.folder = again;
+    throw err;
+  }
   const ids = await writeRecords(batchRef.id, b, rows, actor);
   audit(actor, 'upload_folder', { entity: 'batch', entityId: batchRef.id, label: b.folderName, details: { records: rows.length, files: expectedFiles } });
   return { batchId: batchRef.id, ids };
+}
+
+// Locks for folders uploaded before folder locks existed (run by the Records Officer and admins when the
+// folders are listed). A folder whose identity another folder already holds keeps none.
+export async function ensureFolderLocks(batches) {
+  const snap = await getDocs(collection(db, 'folderLocks'));
+  const locked = new Set(snap.docs.map((d) => d.data().batchId));
+  const taken = new Set(snap.docs.map((d) => d.id));
+  for (const b of batches) {
+    const id = folderLockId(b);
+    if (locked.has(b.id) || taken.has(id)) continue;
+    taken.add(id);
+    await setDoc(doc(db, 'folderLocks', id), { batchId: b.id, at: nowIso() }).catch(() => {});
+  }
 }
 
 // More records and files for a folder already in the archive: they take its year, fund and filing
