@@ -21,6 +21,9 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
      Required fields show in red. You can fill down, paste rows from Excel, and move down with Enter.
   5. *Upload*: progress bar, 3 files at a time, retry of failed files. It warns when a DV No. is
      already archived or a file is identical to one in the archive (SHA-256).
+- **One folder per name, type and fund:** uploading a folder with the same name (ignoring capitals and spaces),
+  main document type and fund as one already in the archive is refused; the wizard offers to add the files to
+  that folder instead. A folder's page also has **Upload more files**, which adds records to it.
 - **Search Archives**: by reference no., payee, particulars, OBR/check no. or file name, with
   filters for type, year, fund, date and amount, sortable columns and CSV export.
 - **Record page**: details, PDF/image preview, download, editing (Records Officer), adding

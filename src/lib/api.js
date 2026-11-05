@@ -102,17 +102,21 @@ export async function existingRefs(rows) {
   return found;
 }
 
-// The folder (batch) and its records, before any file is sent. Returns { batchId, ids: { groupKey: recordId } }.
-export async function createBatch(batch, rows, expectedFiles, actor) {
-  const year = Number(batch.fiscalYear) || null;
-  const b = {
-    folderName: clean(batch.folderName), docType: batch.docType, fiscalYear: year, month: Number(batch.month) || null,
-    fund: clean(batch.fund, 100), boxNo: clean(batch.boxNo, 60), location: clean(batch.location, 200), remarks: clean(batch.remarks, 2000),
-    status: 'uploading', expectedFiles, fileCount: 0, recordCount: rows.length, totalBytes: 0,
-    by: actor.uid, byName: actor.displayName || actor.email, createdAt: serverTimestamp(),
-  };
-  const batchRef = doc(collection(db, 'batches'));
-  await setDoc(batchRef, b);
+// The same folder: same name (ignoring capitals and spaces), same main document type and same fund.
+const folderKey = (name) => String(name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+export async function findSameFolder(batch) {
+  const name = clean(batch.folderName);
+  const queries = [query(collection(db, 'batches'), where('folderName', '==', name))];
+  // the same name typed with other capitals or spaces: among the folders of that fiscal year
+  if (Number(batch.fiscalYear)) queries.push(query(collection(db, 'batches'), where('fiscalYear', '==', Number(batch.fiscalYear))));
+  const found = new Map();
+  for (const snap of await Promise.all(queries.map((q) => getDocs(q)))) snap.docs.forEach((d) => found.set(d.id, withId(d)));
+  return [...found.values()].find((b) => folderKey(b.folderName) === folderKey(name) && b.docType === batch.docType
+    && (b.fund || '') === (clean(batch.fund, 100) || '')) || null;
+}
+
+// The records of a folder, before any file is sent: one per row. Returns { groupKey: recordId }.
+async function writeRecords(batchId, b, rows, actor) {
   const ids = {};
   for (let i = 0; i < rows.length; i += 400) {
     const wb = writeBatch(db);
@@ -120,17 +124,49 @@ export async function createBatch(batch, rows, expectedFiles, actor) {
       const r = doc(collection(db, 'records'));
       const f = recordFields(row);
       wb.set(r, {
-        batchId: batchRef.id, folderName: b.folderName, groupKey: clean(row.key, 500), docType: row.docType, ...f,
-        fund: b.fund, fiscalYear: year || (f.docDate ? Number(f.docDate.slice(0, 4)) : null), month: b.month,
-        boxNo: b.boxNo, location: b.location, files: [], fileCount: 0, keywords: keywordsOf(f),
-        createdBy: actor.uid, createdByName: b.byName, createdAt: serverTimestamp(),
+        batchId, folderName: b.folderName, groupKey: clean(row.key, 500), docType: row.docType, ...f,
+        fund: b.fund || null, fiscalYear: b.fiscalYear || (f.docDate ? Number(f.docDate.slice(0, 4)) : null), month: b.month || null,
+        boxNo: b.boxNo || null, location: b.location || null, files: [], fileCount: 0, keywords: keywordsOf(f),
+        createdBy: actor.uid, createdByName: actor.displayName || actor.email, createdAt: serverTimestamp(),
       });
       ids[row.key] = r.id;
     }
     await wb.commit();
   }
+  return ids;
+}
+
+// A new folder and its records. Refused when the same folder already exists (findSameFolder):
+// the files then go into that folder (addToBatch). Returns { batchId, ids }.
+export async function createBatch(batch, rows, expectedFiles, actor) {
+  const same = await findSameFolder(batch);
+  if (same) {
+    const e = new Error(`The folder "${same.folderName}" (${same.docType}${same.fund ? `, ${same.fund}` : ''}) already exists. Add the files to it instead.`);
+    e.code = 'folder-exists'; e.folder = same;
+    throw e;
+  }
+  const b = {
+    folderName: clean(batch.folderName), docType: batch.docType, fiscalYear: Number(batch.fiscalYear) || null, month: Number(batch.month) || null,
+    fund: clean(batch.fund, 100), boxNo: clean(batch.boxNo, 60), location: clean(batch.location, 200), remarks: clean(batch.remarks, 2000),
+    status: 'uploading', expectedFiles, fileCount: 0, recordCount: rows.length, totalBytes: 0,
+    by: actor.uid, byName: actor.displayName || actor.email, createdAt: serverTimestamp(),
+  };
+  const batchRef = doc(collection(db, 'batches'));
+  await setDoc(batchRef, b);
+  const ids = await writeRecords(batchRef.id, b, rows, actor);
   audit(actor, 'upload_folder', { entity: 'batch', entityId: batchRef.id, label: b.folderName, details: { records: rows.length, files: expectedFiles } });
   return { batchId: batchRef.id, ids };
+}
+
+// More records and files for a folder already in the archive: they take its year, fund and filing
+// location. Returns { batchId, ids }.
+export async function addToBatch(batch, rows, expectedFiles, actor) {
+  const ids = await writeRecords(batch.id, batch, rows, actor);
+  await updateDoc(doc(db, 'batches', batch.id), {
+    recordCount: increment(rows.length), expectedFiles: increment(expectedFiles), status: 'uploading', updatedAt: nowIso(),
+  });
+  audit(actor, 'add_to_folder', { entity: 'batch', entityId: batch.id, label: batch.folderName, details: { records: rows.length, files: expectedFiles } });
+  return { batchId: batch.id, ids };
 }
 
 async function sha256(file) {

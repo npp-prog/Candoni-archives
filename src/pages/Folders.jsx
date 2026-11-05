@@ -102,6 +102,7 @@ export function FolderView() {
       <div className="page-head">
         <div><h1><Icon name="folder" className="h-ic" />{b.folderName} <StatusBadge status={b.status} /></h1></div>
         <div className="row gap wrap">
+          {canUpload && <Link className="btn btn-primary" to={`/upload?into=${b.id}`}><Icon name="upload" />Upload more files</Link>}
           <Link className="btn" to={`/archive?type=${b.docType}${b.fiscalYear ? `&year=${b.fiscalYear}` : ''}`}><Icon name="search" />Same type and year</Link>
           <button className="btn" disabled={zipping} onClick={downloadZip}><Icon name="download" />{zipping ? 'Preparing ZIP…' : 'Download ZIP'}</button>
         </div>

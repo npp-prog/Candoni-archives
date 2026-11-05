@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Select from '../components/Select.jsx';
 import Icon from '../components/Icon.jsx';
 import FilePreview from '../components/FilePreview.jsx';
-import { createBatch, existingRefs, finishBatch, uploadFile } from '../lib/api.js';
+import { addToBatch, createBatch, existingRefs, findSameFolder, finishBatch, getBatch, uploadFile } from '../lib/api.js';
 import { DOC_TYPES, FIELDS, FIELD_LABELS, fieldLabel, fundsOf, typeName, typeOf } from '../lib/doctypes.js';
 import { bytes } from '../lib/format.js';
 import {
@@ -18,7 +18,13 @@ const WIDTH = { refNo: 160, docDate: 120, payee: 180, amount: 120, particulars: 
 
 // The wizard and the upload in progress outlive the page (the upload goes on while the Records
 // Officer looks at another page, and is there when they come back).
-const fresh = () => ({ step: 0, root: '', files: [], skipped: [], batch: {}, mode: 'deepest', rows: [], dups: [] });
+// target: a folder already in the archive that the files go into (instead of a new folder).
+const fresh = () => ({ step: 0, root: '', files: [], skipped: [], batch: {}, mode: 'deepest', rows: [], dups: [], target: null });
+// The wizard's folder details taken from a folder already in the archive.
+const batchOf = (t) => ({
+  folderName: t.folderName, docType: t.docType, fiscalYear: String(t.fiscalYear || ''), month: String(t.month || ''),
+  fund: t.fund || '', boxNo: t.boxNo || '', location: t.location || '', remarks: t.remarks || '',
+});
 let kept = fresh();
 let job = null; // { batchId, recordFor: [], status: [], loaded: [], errors: [], dupOf: [], running, result }
 
@@ -38,6 +44,14 @@ export default function Upload() {
     return () => window.removeEventListener('beforeunload', warn);
   }, []);
   const go = (step) => { update({ step }); window.scrollTo(0, 0); };
+  // Opened from a folder's "Upload more files": start again, going into that folder.
+  const [params, setParams] = useSearchParams();
+  const into = params.get('into');
+  useEffect(() => {
+    if (!into || job?.running) return;
+    setParams({}, { replace: true });
+    getBatch(into).then((t) => { if (t) { job = null; kept = { ...fresh(), target: t, batch: batchOf(t) }; setW(kept); } }).catch(() => {});
+  }, [into]); // eslint-disable-line react-hooks/exhaustive-deps
   const restart = () => { if (job?.running) return; job = null; kept = fresh(); setW(kept); };
 
   return (
@@ -53,11 +67,13 @@ export default function Upload() {
           </li>
         ))}
       </ol>
-      {w.step === 0 && <StepSelect onFiles={(list) => accept(list, update, go)} />}
+      {w.target && !job && <div className="alert alert-info">These files go into the folder already in the archive: <b>{w.target.folderName}</b>{' '}
+        ({w.target.docType}{w.target.fund ? `, ${w.target.fund}` : ''}, FY {w.target.fiscalYear || '—'}). <Link to={`/folders/${w.target.id}`}>Open the folder</Link></div>}
+      {w.step === 0 && <StepSelect onFiles={(list) => accept(list, update, go, w.target)} />}
       {w.step === 1 && <StepDetails w={w} update={update} go={go} funds={fundsOf(settings)} />}
       {w.step === 2 && <StepGroup w={w} update={update} go={go} />}
       {w.step === 3 && <StepGrid w={w} update={update} go={go} />}
-      {w.step === 4 && <StepUpload w={w} go={go} actor={actor} restart={restart} redraw={() => setTick((n) => n + 1)} />}
+      {w.step === 4 && <StepUpload w={w} update={update} go={go} actor={actor} restart={restart} redraw={() => setTick((n) => n + 1)} />}
     </div>
   );
 }
@@ -105,7 +121,7 @@ async function walk(entry, prefix, out) {
   }
 }
 
-function accept(list, update, go) {
+function accept(list, update, go, target = null) {
   if (!list.length) { window.alert('That folder is empty.'); return; }
   const firsts = new Set(list.map((x) => x.path.split('/')[0]));
   const hasRoot = firsts.size === 1 && list.every((x) => x.path.includes('/'));
@@ -124,9 +140,9 @@ function accept(list, update, go) {
   const ref = (files.map((f) => parseName(f.name).refNo).find(Boolean) || '').split('-');
   const dvNo = ref.length === 4;
   update({
-    root, files, skipped, rows: [], dups: [],
+    root, files, skipped, rows: [], dups: [], target,
     mode: files.some((f) => f.rel.includes('/')) ? 'deepest' : 'file',
-    batch: {
+    batch: target ? batchOf(target) : {
       folderName: root,
       docType: /payroll/i.test(root) ? 'PAYROLL' : /\bjev\b/i.test(root) ? 'JEV' : /\b(po|purchase order)\b/i.test(root) ? 'PO' : 'DV',
       fiscalYear: String(detectYear(root) || (dvNo ? Number(ref[1]) : '') || new Date().getFullYear()),
@@ -178,7 +194,20 @@ function Tree({ files }) {
 
 function StepDetails({ w, update, go, funds }) {
   const b = w.batch;
-  const set = (k) => (e) => update({ batch: { ...b, [k]: e.target.value } });
+  const set = (k) => (e) => { setSame(null); update({ batch: { ...b, [k]: e.target.value } }); };
+  const locked = Boolean(w.target); // going into a folder already in the archive: its details are used
+  const [same, setSame] = useState(null); // a folder already in the archive with these details
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
+  const next = async () => {
+    if (locked) { go(2); return; }
+    setChecking(true); setError('');
+    try {
+      const found = await findSameFolder(b);
+      if (found) setSame(found); else go(2);
+    } catch (e) { setError(e.message); } finally { setChecking(false); }
+  };
+  const intoSame = () => { update({ target: same, batch: batchOf(same) }); setSame(null); };
   const years = Array.from({ length: 40 }, (_, i) => String(new Date().getFullYear() + 1 - i));
   const ok = b.docType && b.fiscalYear && String(b.folderName || '').trim();
   return (
@@ -187,23 +216,26 @@ function StepDetails({ w, update, go, funds }) {
       <div className="grid-2">
         <div className="card">
           <h3>Folder details</h3>
-          <p className="help" style={{ marginTop: '-.5rem', marginBottom: '1rem' }}>These apply to every record in this folder.</p>
-          <div className="fields">
+          {locked ? (
+            <div className="alert alert-info small">The files go into <b>{w.target.folderName}</b>, already in the archive, so its details are used.{' '}
+              <button type="button" className="link" onClick={() => update({ target: null })}>Upload as a new folder instead</button></div>
+          ) : <p className="help" style={{ marginTop: '-.5rem', marginBottom: '1rem' }}>These apply to every record in this folder.</p>}
+          <fieldset className="fields plain-fieldset" disabled={locked}>
             <div><label className="field-label" htmlFor="dt">Main document type <span className="req">*</span></label>
-              <Select id="dt" value={b.docType} onChange={set('docType')}>{DOC_TYPES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}</Select>
+              <Select id="dt" disabled={locked} value={b.docType} onChange={set('docType')}>{DOC_TYPES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}</Select>
               <div className="help">What the folder is filed as. You state the type of each document in it in step 4.</div></div>
             <div><label className="field-label" htmlFor="fy">Fiscal year <span className="req">*</span></label>
-              <Select id="fy" value={b.fiscalYear} onChange={set('fiscalYear')}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</Select></div>
+              <Select id="fy" disabled={locked} value={b.fiscalYear} onChange={set('fiscalYear')}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</Select></div>
             <div><label className="field-label" htmlFor="mo">Month</label>
-              <Select id="mo" value={b.month} onChange={set('month')}><option value="">Whole year or mixed</option>{MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}</Select></div>
+              <Select id="mo" disabled={locked} value={b.month} onChange={set('month')}><option value="">Whole year or mixed</option>{MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}</Select></div>
             <div><label className="field-label" htmlFor="fd">Fund</label>
-              <Select id="fd" value={b.fund} onChange={set('fund')}><option value="">None</option>{funds.map((f) => <option key={f}>{f}</option>)}</Select></div>
+              <Select id="fd" disabled={locked} value={b.fund} onChange={set('fund')}><option value="">None</option>{funds.map((f) => <option key={f}>{f}</option>)}</Select></div>
             <div><label className="field-label" htmlFor="bx">Box no.</label><input id="bx" value={b.boxNo} onChange={set('boxNo')} /></div>
             <div><label className="field-label" htmlFor="lc">Shelf / location</label><input id="lc" value={b.location} onChange={set('location')} />
               <div className="help">Where the paper copies are kept.</div></div>
             <div className="field-wide"><label className="field-label" htmlFor="rm">Remarks</label><textarea id="rm" value={b.remarks} onChange={set('remarks')} /></div>
             <div className="field-wide"><label className="field-label" htmlFor="fn">Folder name <span className="req">*</span></label><input id="fn" value={b.folderName} onChange={set('folderName')} /></div>
-          </div>
+          </fieldset>
         </div>
         <div className="card">
           <h3>Folder contents</h3>
@@ -214,9 +246,21 @@ function StepDetails({ w, update, go, funds }) {
           )}
         </div>
       </div>
+      {same && (
+        <div className="alert alert-warn" role="alert">
+          <b>This folder is already in the archive.</b> {same.folderName} ({typeName(same.docType)}{same.fund ? `, ${same.fund}` : ''}, FY {same.fiscalYear || '—'}),
+          uploaded {same.createdAt?.toDate ? same.createdAt.toDate().toLocaleDateString('en-PH', { dateStyle: 'medium' }) : ''} by {same.byName}, with {same.recordCount} record{same.recordCount === 1 ? '' : 's'}.
+          A second folder with the same name, type and fund is not allowed: add these files to it, or change the details above if this is a different folder.
+          <div className="row gap wrap" style={{ marginTop: '.7rem' }}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={intoSame}>Add these files to that folder</button>
+            <Link className="btn btn-sm" to={`/folders/${same.id}`} target="_blank">Open that folder</Link>
+          </div>
+        </div>
+      )}
+      {error && <div className="alert">{error}</div>}
       <div className="row wizard-nav">
-        <button className="btn" onClick={() => { if (window.confirm('Choose a different folder?')) { kept = fresh(); update(fresh()); } }}>Back</button>
-        <button className="btn btn-primary" disabled={!ok} onClick={() => go(2)}>Next: Group files</button>
+        <button className="btn" onClick={() => { if (window.confirm('Choose different files?')) { kept = { ...fresh(), target: w.target, batch: w.target ? batchOf(w.target) : {} }; update(kept); } }}>Back</button>
+        <button className="btn btn-primary" disabled={!ok || checking || Boolean(same)} onClick={next}>{checking ? 'Checking…' : 'Next: Group files'}</button>
       </div>
     </>
   );
@@ -455,11 +499,12 @@ function FilePeek({ rows, peek, setPeek, setCell, tidy }) {
 }
 
 // ---------- step 5: review and upload ----------
-function StepUpload({ w, go, actor, restart, redraw }) {
+function StepUpload({ w, update, go, actor, restart, redraw }) {
   const t = typeOf(w.batch.docType);
   const totalBytes = w.files.reduce((s, f) => s + f.size, 0);
   const repeated = Object.entries(w.rows.reduce((m, r) => { const k = String(r.refNo).trim(); if (k) { const key = `${r.docType} ${k}`; m[key] = (m[key] || 0) + 1; } return m; }, {})).filter(([, n]) => n > 1);
   const [error, setError] = useState('');
+  const [existing, setExisting] = useState(null); // the same folder, created meanwhile
 
   const run = async (indexes) => {
     job.running = true;
@@ -490,13 +535,15 @@ function StepUpload({ w, go, actor, restart, redraw }) {
     job = { batchId: null, recordFor: [], refFor: [], status: w.files.map(() => 'waiting'), loaded: [], errors: [], dupOf: [], running: true, result: null };
     redraw();
     try {
-      const { batchId, ids } = await createBatch(w.batch, w.rows, w.files.length, actor);
+      const { batchId, ids } = w.target ? await addToBatch(w.target, w.rows, w.files.length, actor) : await createBatch(w.batch, w.rows, w.files.length, actor);
       job.batchId = batchId;
       const refs = Object.fromEntries(w.rows.map((r) => [r.key, r.refNo]));
       job.recordFor = w.files.map((f) => ids[groupKey(f.rel, w.mode, w.root)]);
       job.refFor = w.files.map((f) => refs[groupKey(f.rel, w.mode, w.root)]);
     } catch (e) {
       job = null;
+      // the same folder was created meanwhile (e.g. by another Records Officer): offer it
+      if (e.code === 'folder-exists') { setExisting(e.folder); setError(e.message); redraw(); return; }
       setError(e.code === 'permission-denied' ? 'Not allowed. Is your role Records Officer or Admin, and are the latest firestore.rules published?' : e.message);
       redraw();
       return;
@@ -517,7 +564,7 @@ function StepUpload({ w, go, actor, restart, redraw }) {
         <div className="card">
           <h3>Review</h3>
           <dl className="details">
-            <dt>Folder</dt><dd>{w.batch.folderName}</dd>
+            <dt>Folder</dt><dd>{w.batch.folderName}{w.target && <span className="badge badge-blue" style={{ marginLeft: '.5rem' }}>already in the archive</span>}</dd>
             <dt>Main document type</dt><dd>{t.name}</dd>
             <dt>Fiscal year</dt><dd>{w.batch.fiscalYear}{w.batch.month ? ` · ${MONTHS[w.batch.month - 1]}` : ''}</dd>
             <dt>Fund</dt><dd>{w.batch.fund || '—'}</dd>
@@ -539,6 +586,10 @@ function StepUpload({ w, go, actor, restart, redraw }) {
             <div className="card">
               <p>Everything is ready. The files are uploaded three at a time; keep this window open until it finishes.</p>
               {error && <div className="alert">{error}</div>}
+              {existing && (
+                <p><button className="btn btn-sm btn-primary" onClick={() => { update({ target: existing, batch: batchOf(existing) }); setExisting(null); setError(''); }}>
+                  Add these files to {existing.folderName}</button></p>
+              )}
               <div className="row gap"><button className="btn" onClick={() => go(3)}>Back</button>
                 <button className="btn btn-primary" onClick={start}><Icon name="upload" />Upload {w.files.length} files</button></div>
             </div>
