@@ -15,18 +15,38 @@ const clean = (v, max = 200) => { const s = String(v ?? '').replace(/[\u0000-\u0
 
 // The user's profile; made on their first sign-in (a Viewer waiting for approval, or the owner as
 // superadmin once their email is verified).
+// The person's invitation (Users → Add user), if an administrator added their email; null otherwise.
+export async function myInvite(user) {
+  if (!user?.email) return null;
+  const snap = await getDoc(doc(db, 'invites', user.email.toLowerCase())).catch(() => null);
+  return snap?.exists() ? snap.data() : null;
+}
+
+// The user's profile; made on their first sign-in: a Viewer waiting for approval; or, once their email
+// is verified, the owner as superadmin, or someone an administrator added with the role they were given.
 export async function ensureUserProfile(user, extra = {}) {
   const r = doc(db, 'users', user.uid);
   const owner = isOwnerEmail(user.email) && user.emailVerified;
   const snap = await getDoc(r);
-  if (snap.exists()) {
-    const p = snap.data();
-    if (owner && (p.role !== 'superadmin' || !p.active)) {
-      await updateDoc(r, { role: 'superadmin', active: true });
-      return { id: user.uid, ...p, role: 'superadmin', active: true };
-    }
-    return { id: user.uid, ...p };
+  const existing = snap.exists() ? snap.data() : null;
+  if (existing && owner && (existing.role !== 'superadmin' || !existing.active)) {
+    await updateDoc(r, { role: 'superadmin', active: true });
+    return { id: user.uid, ...existing, role: 'superadmin', active: true };
   }
+  if (existing?.active) return { id: user.uid, ...existing };
+  // added in advance by an administrator: approved with that role (the email must be verified)
+  const invite = !owner && user.emailVerified ? await myInvite(user) : null;
+  if (invite) {
+    const granted = {
+      role: invite.role, active: true, displayName: clean(invite.displayName || existing?.displayName || user.displayName || user.email, 120),
+      approvedBy: invite.byName || '', approvedAt: nowIso(),
+    };
+    if (existing) await updateDoc(r, { ...granted, deactivated: false });
+    else await setDoc(r, { email: user.email, requestedOffice: clean(extra.office, 120) || '', createdAt: serverTimestamp(), ...granted });
+    await deleteDoc(doc(db, 'invites', user.email.toLowerCase())).catch(() => {});
+    return { id: user.uid, ...(existing || { email: user.email }), ...granted };
+  }
+  if (existing) return { id: user.uid, ...existing };
   const profile = {
     email: user.email,
     displayName: clean(extra.displayName || user.displayName || user.email, 120),
@@ -37,6 +57,24 @@ export async function ensureUserProfile(user, extra = {}) {
   };
   await setDoc(r, profile);
   return { id: user.uid, ...profile };
+}
+
+// Users → Add user: people added before they sign in.
+export async function listInvites() {
+  const snap = await getDocs(collection(db, 'invites'));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+export async function addInvite({ email, displayName, role }, actor) {
+  const key = String(email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)) throw new Error('Enter a valid email address.');
+  await setDoc(doc(db, 'invites', key), {
+    email: key, displayName: clean(displayName, 120) || key, role, by: actor.uid, byName: actor.displayName || actor.email, at: nowIso(),
+  });
+  audit(actor, 'add_user', { entity: 'invite', label: key, details: { role } });
+}
+export async function removeInvite(email, actor) {
+  await deleteDoc(doc(db, 'invites', email));
+  audit(actor, 'remove_added_user', { entity: 'invite', label: email });
 }
 
 export async function listUsers() {

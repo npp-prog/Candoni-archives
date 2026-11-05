@@ -36,7 +36,8 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
   uploaded a folder, or an administrator, can **Edit folder** (name, main type, year, month, fund, box, shelf,
   remarks); a new name, type or fund may not match another folder.
 - **Dashboard**: totals (records, files, folders, storage), records by type and year, recent uploads.
-- **Users**: new accounts wait for approval. Roles: Superadmin (owner), Admin, Records Officer and Viewer.
+- **Users**: an admin can **Add user** (name, email, role): when that person signs in with that email (verified:
+  Continue with Google, or the link Firebase emails), they have access at once. People who sign up on their own wait for approval. Roles: Superadmin (owner), Admin, Records Officer and Viewer.
 - **Audit Log**: who uploaded, viewed, downloaded, edited or deleted what. It is never changed.
 - **Settings**: the list of funds.
 
@@ -92,8 +93,8 @@ Every push to the branch redeploys.
 ### 5. First sign-in
 Open the site and use **Continue with Google** with **npp@mgocandoniaccounting.org**. You become the
 superadmin, already approved. (If you sign up with email and password instead, open the verification
-link first.) Others then sign up and wait under **Users → Waiting for approval**. Give the Records
-Officer the *Records Officer* role.
+link first.) Then add the others under **Users → Add user** (they have access as soon as they sign in), or let them sign up
+and approve them under **Waiting for approval**.
 
 ## Publishing the rules automatically
 
@@ -202,6 +203,7 @@ lifecycle.json           optional Storage rule: files to Coldline 90 days after 
 | Collection | One document per | Holds |
 |------------|------------------|-------|
 | `users` | account | name, email, role, active |
+| `invites` | email added by an admin | name, role (removed once they sign in) |
 | `batches` | uploaded folder | type, fiscal year, month, fund, box no., location, counts, status |
 | `records` | document / transaction | DV No., date, payee, amount, particulars…, its files, search words |
 | `hashes` | file content (SHA-256) | the record that holds it (duplicate check) |
