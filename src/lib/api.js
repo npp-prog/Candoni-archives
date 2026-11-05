@@ -183,7 +183,7 @@ const EXT_TYPES = {
   doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
-const contentTypeOf = (name) => EXT_TYPES[String(name).split('.').pop().toLowerCase()] || 'application/octet-stream';
+export const contentTypeOf = (name) => EXT_TYPES[String(name).split('.').pop().toLowerCase()] || 'application/octet-stream';
 
 // ---------- reading ----------
 const withId = (d) => ({ id: d.id, ...d.data() });
