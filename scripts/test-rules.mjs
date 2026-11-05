@@ -20,6 +20,15 @@ async function as(who) {
   const st = getStorage(app);
   connectStorageEmulator(st, '127.0.0.1', 9199);
   const cred = who.create ? await createUserWithEmailAndPassword(auth, who.email, who.password) : await signInWithEmailAndPassword(auth, who.email, who.password);
+  if (who.verified) {
+    // as after Continue with Google or the verification link
+    await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/demo-archives/accounts:update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
+      body: JSON.stringify({ localId: cred.user.uid, emailVerified: true }),
+    });
+    await cred.user.reload();
+    await cred.user.getIdToken(true);
+  }
   return { db, st, uid: cred.user.uid };
 }
 const denied = async (p, what) => {
@@ -139,6 +148,33 @@ await ok(deleteDoc(doc(owner.db, 'batches', b.id)), 'superadmin deletes a folder
 // Settings
 await denied(setDoc(doc(records.db, 'meta', 'settings'), { funds: ['X'] }), 'Records Officer edits settings');
 await ok(setDoc(doc(owner.db, 'meta', 'settings'), { funds: ['General Fund', 'Special Education Fund', 'Trust Fund'] }), 'superadmin edits settings');
+
+// Users → Add user: added in advance, approved with that role on their first sign-in (email verified)
+const inv = (tag) => `${tag}${stamp}@archives.local`;
+const invite = (email, role, by) => ({ email, displayName: 'Added', role, by, byName: 'x', at: 'x' });
+const profile = (email, role, active) => ({ email, displayName: 'Added', requestedOffice: '', role, active, createdAt: serverTimestamp(), approvedBy: 'x', approvedAt: 'x' });
+await denied(setDoc(doc(records.db, 'invites', inv('a')), invite(inv('a'), 'user', records.uid)), 'Records Officer adds a user');
+await denied(setDoc(doc(owner.db, 'invites', `UPPER${stamp}@archives.local`), invite(`UPPER${stamp}@archives.local`, 'user', owner.uid)), 'an invite not in lower case');
+await ok(setDoc(doc(owner.db, 'invites', inv('a')), invite(inv('a'), 'records', owner.uid)), 'superadmin adds a Records Officer');
+await ok(setDoc(doc(owner.db, 'invites', inv('b')), invite(inv('b'), 'user', owner.uid)), 'superadmin adds a Viewer');
+await ok(setDoc(doc(owner.db, 'invites', inv('c')), invite(inv('c'), 'user', owner.uid)), 'superadmin adds another');
+await denied(getDoc(doc(viewer.db, 'invites', inv('a'))), 'Viewer reads an invite');
+const unverified = await as({ email: inv('a'), password: 'pass1234', create: true });
+await denied(setDoc(doc(unverified.db, 'users', unverified.uid), profile(inv('a'), 'records', true)), 'added, email not verified, takes the role');
+const verifiedA = await as({ email: inv('a'), password: 'pass1234', verified: true });
+await ok(getDoc(doc(verifiedA.db, 'invites', inv('a'))), 'the added person reads their invite');
+await denied(setDoc(doc(verifiedA.db, 'users', verifiedA.uid), profile(inv('a'), 'admin', true)), 'added, takes another role than given');
+await ok(setDoc(doc(verifiedA.db, 'users', verifiedA.uid), profile(inv('a'), 'records', true)), 'added and verified: approved with the given role');
+await ok(deleteDoc(doc(verifiedA.db, 'invites', inv('a'))), 'the added person removes their used invite');
+await denied(deleteDoc(doc(verifiedA.db, 'invites', inv('b'))), 'removes someone else\'s invite');
+const notAdded = await as({ email: inv('z'), password: 'pass1234', create: true, verified: true });
+await denied(setDoc(doc(notAdded.db, 'users', notAdded.uid), profile(inv('z'), 'user', true)), 'not added: approves themself');
+// signed up first (waiting), added afterwards: approved through the invite
+const early = await as({ email: inv('c'), password: 'pass1234', create: true, verified: true });
+await ok(setDoc(doc(early.db, 'users', early.uid), { email: inv('c'), displayName: 'Early', requestedOffice: '', role: 'user', active: false, createdAt: serverTimestamp() }), 'signs up (waiting)');
+await denied(updateDoc(doc(early.db, 'users', early.uid), { role: 'records', active: true, displayName: 'Early', approvedBy: 'x', approvedAt: 'x' }), 'waiting, takes a role not given');
+await ok(updateDoc(doc(early.db, 'users', early.uid), { role: 'user', active: true, displayName: 'Early', approvedBy: 'x', approvedAt: 'x' }), 'waiting, then added: approved with the given role');
+await ok(deleteDoc(doc(owner.db, 'invites', inv('b'))), 'admin removes an added user');
 
 assert.ok(true);
 console.log('All rules checks passed.');

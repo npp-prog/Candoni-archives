@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LandingBar } from './Login.jsx';
 import Icon from '../components/Icon.jsx';
 import { isOwnerEmail } from '../lib/owner.js';
+import { myInvite } from '../lib/api.js';
 
 // After signing in, until an administrator approves the account (or it cannot be loaded, or the
 // owner's email is not verified yet).
@@ -10,7 +11,10 @@ export default function Pending({ error }) {
   const { user, profile, logout, refreshProfile, resendVerification } = useAuth();
   const [sent, setSent] = useState(false);
   const [checking, setChecking] = useState(false);
-  const ownerUnverified = isOwnerEmail(user?.email) && !user?.emailVerified;
+  // Added in advance by an administrator: only the email's verification is missing.
+  const [invited, setInvited] = useState(false);
+  useEffect(() => { if (user && !user.emailVerified) myInvite(user).then((i) => setInvited(Boolean(i))).catch(() => {}); }, [user]);
+  const ownerUnverified = (isOwnerEmail(user?.email) || invited) && !user?.emailVerified;
   const check = async () => { setChecking(true); try { await refreshProfile(); } finally { setChecking(false); } };
   const steps = [
     ['Account created', user?.email || ''],
@@ -37,7 +41,7 @@ export default function Pending({ error }) {
           </>
         ) : ownerUnverified ? (
           <>
-            <p className="pending-text">{user.email} is the Candoni Archives superadmin. To protect it, Firebase must first confirm
+            <p className="pending-text">{isOwnerEmail(user.email) ? `${user.email} is the Candoni Archives superadmin. To protect it,` : `An administrator added ${user.email} to Candoni Archives, with your role. To activate your account,`} Firebase must first confirm
               you own this address: open the verification link we emailed you (check Spam too), then click <b>Check again</b>.
               Or sign out and use <b>Continue with Google</b> with this account, which needs no link.</p>
             <p><button className="link" disabled={sent} onClick={() => resendVerification().then(() => setSent(true))}>
