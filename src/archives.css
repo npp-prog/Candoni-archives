@@ -102,3 +102,6 @@
 /* icons inside buttons */
 .btn svg { width: 16px; height: 16px; flex: none; }
 .btn-sm svg { width: 14px; height: 14px; }
+
+/* long messages (e.g. a link from Firebase) wrap instead of running off the page */
+.alert { overflow-wrap: anywhere; }
