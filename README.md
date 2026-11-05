@@ -72,7 +72,8 @@ gsutil cors set cors.json gs://candoni-archives.firebasestorage.app
 
 Without this, previews still work, and Download opens the file in a new tab instead.
 
-*Shortcut for steps 2–3 (rules only):* `npx firebase-tools login`, then `npm run deploy:rules`.
+*Shortcut for steps 2–3 (rules only):* `npx firebase-tools login`, then `npm run deploy:rules`, or set up
+[Publishing the rules automatically](#publishing-the-rules-automatically).
 
 ### 4. Netlify
 Netlify → **Add new site → Import an existing project** → GitHub → `npp-prog/Candoni-archives`.
@@ -84,6 +85,32 @@ Open the site and use **Continue with Google** with **npp@mgocandoniaccounting.o
 superadmin, already approved. (If you sign up with email and password instead, open the verification
 link first.) Others then sign up and wait under **Users → Waiting for approval**. Give the Records
 Officer the *Records Officer* role.
+
+## Publishing the rules automatically
+
+The GitHub Action [`publish-rules.yml`](.github/workflows/publish-rules.yml) publishes `firestore.rules` and
+`storage.rules` to Firebase whenever they change on `main`, so the live rules always match the code. It
+publishes the rules only (not indexes). It needs a service-account key, set up once:
+
+1. **Create the service account.** Google Cloud console (console.cloud.google.com, project **candoni-archives**)
+   → ☰ → **IAM & Admin** → **Service Accounts** → **Create service account**:
+   - name: `github-rules-publisher` → **Create and continue**
+   - roles: **Firebase Rules Admin**, **Firebase Viewer**, **Service Usage Consumer** → **Done**
+2. **Make its key.** Open the new service account → **Keys** → **Add key** → **Create new key** → **JSON** →
+   **Create**. A `.json` file downloads. It is a password to the project: keep it private, and delete the
+   file from your device after step 3.
+3. **Give it to GitHub.** github.com/npp-prog/Candoni-archives → **Settings** → **Secrets and variables** →
+   **Actions** → **New repository secret**:
+   - name: `FIREBASE_SERVICE_ACCOUNT`
+   - secret: the whole contents of the `.json` file → **Add secret**
+4. **Publish now.** **Actions** tab → **Publish Firebase rules** → **Run workflow** → **Run workflow**. A green
+   tick means the rules are live.
+
+If step 2 says key creation is disabled, your Google Cloud organization blocks service-account keys
+(policy `iam.disableServiceAccountKeyCreation`). Publish in the Firebase console instead (Firestore Database
+→ Rules, and Storage → Rules: paste the file → **Publish**), or ask the organization's administrator.
+
+To stop it, delete the secret or disable the workflow (Actions → Publish Firebase rules → ⋯ → Disable).
 
 ## Keeping storage costs low (optional): Coldline for older files
 
@@ -157,6 +184,7 @@ src/styles.css           the DMS design (only the rules this app uses); src/arch
 firestore.rules          who may read and write what (keep roles in sync with src/lib/roles.js)
 storage.rules            the files: read by approved users, uploaded by the Records Officer, deleted by admins
 netlify.toml             build, SPA redirect, headers
+.github/workflows/       publish-rules.yml: publishes the rules when they change on main
 lifecycle.json           optional Storage rule: files to Coldline 90 days after upload (see above)
 ```
 
