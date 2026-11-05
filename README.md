@@ -23,7 +23,7 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
 - **Record page**: details, PDF/image preview, download, editing (Records Officer), adding
   missing files, and history.
 - **Uploaded Folders**: each upload with where its paper is filed, its records, and a ZIP download.
-- **Dashboard**: totals, records by type and year, recent uploads.
+- **Dashboard**: totals (records, files, storage, amount), records by type and year, recent uploads.
 - **Users**: new accounts wait for approval. Roles: Superadmin (owner), Admin, Records Officer and Viewer.
 - **Audit Log**: who uploaded, viewed, downloaded, edited or deleted what. It is never changed.
 - **Settings**: the list of funds.
@@ -52,9 +52,7 @@ and any custom domain.
 **Firestore Database** → Create database (production mode; region e.g. `asia-southeast1`).
 Then **Rules** → replace everything with the contents of [`firestore.rules`](firestore.rules) → **Publish**.
 
-Then **Indexes** → **Composite** → **Create index**: collection `records`, fields `docType` Ascending and
-`amount` Ascending, query scope Collection. (The dashboard's "Total of DVs archived" needs it; until it
-exists that figure shows "—". The error message on the dashboard also links straight to it.)
+No indexes need to be created: every query uses Firestore's automatic indexes.
 
 ### 3. Storage
 **Storage** → Get started (Storage needs the Blaze plan; usage within the free quota costs nothing).
@@ -71,7 +69,7 @@ gsutil cors set cors.json gs://candoni-archives.firebasestorage.app
 
 Without this, previews still work, and Download opens the file in a new tab instead.
 
-*Shortcut for steps 2–3 (rules and the index):* `npx firebase-tools login`, then `npm run deploy:rules`.
+*Shortcut for steps 2–3 (rules only):* `npx firebase-tools login`, then `npm run deploy:rules`.
 
 ### 4. Netlify
 Netlify → **Add new site → Import an existing project** → GitHub → `npp-prog/Candoni-archives`.

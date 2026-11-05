@@ -234,25 +234,30 @@ export async function searchRecords(f) {
   return { rows, capped: snap.size >= SEARCH_LIMIT };
 }
 
-// Dashboard figures (aggregation queries: one read per 1,000 records).
+// Dashboard figures. Each query filters or sums one field only, so Firestore's automatic indexes
+// serve them all (no composite index to create). A figure that cannot be read shows as null
+// instead of failing the dashboard.
 export async function stats() {
   const recs = collection(db, 'records');
+  const batches = collection(db, 'batches');
   const year = new Date().getFullYear();
   const years = Array.from({ length: 8 }, (_, i) => year - i);
-  const [records, batches, dv, bytes, byType, byYear, recent] = await Promise.all([
-    getCountFromServer(recs).then((s) => s.data().count),
-    getCountFromServer(collection(db, 'batches')).then((s) => s.data().count),
-    // needs the composite index docType + amount (firestore.indexes.json); until it exists, the
-    // dashboard shows the other figures and this one as unavailable
-    getAggregateFromServer(query(recs, where('docType', '==', 'DV')), { total: sum('amount') }).then((s) => s.data().total || 0).catch(() => null),
-    getAggregateFromServer(collection(db, 'batches'), { b: sum('totalBytes'), f: sum('fileCount') }).then((s) => s.data()),
-    Promise.all(DOC_TYPES.map((t) => getCountFromServer(query(recs, where('docType', '==', t.code))).then((s) => ({ code: t.code, n: s.data().count })))),
-    Promise.all(years.map((y) => getCountFromServer(query(recs, where('fiscalYear', '==', y))).then((s) => ({ year: y, n: s.data().count })))),
-    listBatches(6),
+  const soft = (p) => p.catch(() => null);
+  const count = (q) => soft(getCountFromServer(q).then((s) => s.data().count));
+  const total = (q, field) => soft(getAggregateFromServer(q, { t: sum(field) }).then((s) => s.data().t || 0));
+  const [records, batchCount, amount, bytes, files, byType, byYear, recent] = await Promise.all([
+    count(recs),
+    count(batches),
+    total(recs, 'amount'),
+    total(batches, 'totalBytes'),
+    total(batches, 'fileCount'),
+    Promise.all(DOC_TYPES.map((t) => count(query(recs, where('docType', '==', t.code))).then((n) => ({ code: t.code, n })))),
+    Promise.all(years.map((y) => count(query(recs, where('fiscalYear', '==', y))).then((n) => ({ year: y, n })))),
+    soft(listBatches(6)),
   ]);
   return {
-    records, batches, dvAmount: dv, bytes: bytes.b || 0, files: bytes.f || 0,
-    byType: byType.filter((x) => x.n).sort((a, b) => b.n - a.n), byYear: byYear.filter((x) => x.n), recent,
+    records, batches: batchCount, amount, bytes, files,
+    byType: byType.filter((x) => x.n).sort((a, b) => b.n - a.n), byYear: byYear.filter((x) => x.n), recent: recent || [],
   };
 }
 
