@@ -343,17 +343,43 @@ export async function updateRecord(record, row, actor) {
   audit(actor, 'edit_record', { entity: 'record', entityId: record.id, label: f.refNo || record.refNo, details: changes });
 }
 
-export async function updateBatchLocation(batch, patch, actor) {
-  const p = { boxNo: clean(patch.boxNo, 60), location: clean(patch.location, 200), remarks: clean(patch.remarks, 2000) };
-  await updateDoc(doc(db, 'batches', batch.id), { ...p, updatedAt: nowIso() });
-  // the records keep a copy (shown in search results)
+// Edit folder (its uploader or an administrator). A new name, type or fund must not match another folder
+// (code 'folder-exists'), and moves the folder's lock in the same write. Its records take the new
+// details they keep a copy of (name, fund, year, month, where filed).
+export async function updateFolder(batch, patch, actor) {
+  const p = {
+    folderName: clean(patch.folderName), docType: patch.docType, fiscalYear: Number(patch.fiscalYear) || null, month: Number(patch.month) || null,
+    fund: clean(patch.fund, 100), boxNo: clean(patch.boxNo, 60), location: clean(patch.location, 200), remarks: clean(patch.remarks, 2000),
+  };
+  if (!p.folderName) throw new Error('The folder needs a name.');
+  const oldKey = folderLockId(batch);
+  const newKey = folderLockId(p);
+  const wb = writeBatch(db);
+  wb.update(doc(db, 'batches', batch.id), { ...p, updatedAt: nowIso(), updatedBy: actor.displayName || actor.email });
+  if (newKey !== oldKey) {
+    const same = await findSameFolder(p);
+    if (same && same.id !== batch.id) {
+      const e = new Error(`Another folder already has this name, type and fund: "${same.folderName}" (${same.docType}${same.fund ? `, ${same.fund}` : ''}), uploaded by ${same.byName}.`);
+      e.code = 'folder-exists'; e.folder = same;
+      throw e;
+    }
+    wb.set(doc(db, 'folderLocks', newKey), { batchId: batch.id, at: nowIso() });
+    const old = await getDoc(doc(db, 'folderLocks', oldKey));
+    if (old.exists() && old.data().batchId === batch.id) wb.delete(old.ref);
+  }
+  await wb.commit();
   const recs = await recordsOfBatch(batch.id);
   for (let i = 0; i < recs.length; i += 400) {
-    const wb = writeBatch(db);
-    recs.slice(i, i + 400).forEach((r) => wb.update(doc(db, 'records', r.id), { boxNo: p.boxNo, location: p.location, updatedAt: nowIso() }));
-    await wb.commit();
+    const rb = writeBatch(db);
+    recs.slice(i, i + 400).forEach((r) => rb.update(doc(db, 'records', r.id), {
+      folderName: p.folderName, fund: p.fund, fiscalYear: p.fiscalYear || r.fiscalYear || null, month: p.month,
+      boxNo: p.boxNo, location: p.location, updatedAt: nowIso(),
+    }));
+    await rb.commit();
   }
-  audit(actor, 'edit_folder', { entity: 'batch', entityId: batch.id, label: batch.folderName, details: p });
+  const changes = {};
+  for (const [k, v] of Object.entries(p)) if (String(batch[k] ?? '') !== String(v ?? '')) changes[k] = { from: batch[k] ?? null, to: v };
+  audit(actor, 'edit_folder', { entity: 'batch', entityId: batch.id, label: p.folderName, details: changes });
 }
 
 export async function deleteRecord(record, actor) {

@@ -27,9 +27,13 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
   it too: each folder has a lock (`folderLocks`) named after its name, type and fund, created with it in one write.
 - **Search Archives**: by reference no., payee, particulars, OBR/check no. or file name, with
   filters for type, year, fund, date and amount, sortable columns and CSV export.
+- **Preview**: the eye button on a record (in a folder or in search results) shows its documents in a pop-up
+  beside its details, with Previous / Next through the list.
 - **Record page**: details, PDF/image preview, download, editing (Records Officer), adding
   missing files, and history.
-- **Uploaded Folders**: each upload with where its paper is filed, its records, and a ZIP download.
+- **Uploaded Folders**: each upload with where its paper is filed, its records, and a ZIP download. The person who
+  uploaded a folder, or an administrator, can **Edit folder** (name, main type, year, month, fund, box, shelf,
+  remarks); a new name, type or fund may not match another folder.
 - **Dashboard**: totals (records, files, folders, storage), records by type and year, recent uploads.
 - **Users**: new accounts wait for approval. Roles: Superadmin (owner), Admin, Records Officer and Viewer.
 - **Audit Log**: who uploaded, viewed, downloaded, edited or deleted what. It is never changed.
