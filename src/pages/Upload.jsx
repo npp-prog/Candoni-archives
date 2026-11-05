@@ -5,7 +5,7 @@ import Select from '../components/Select.jsx';
 import Icon from '../components/Icon.jsx';
 import FilePreview from '../components/FilePreview.jsx';
 import { createBatch, existingRefs, finishBatch, uploadFile } from '../lib/api.js';
-import { DOC_TYPES, FIELDS, fieldLabel, fundsOf, typeOf } from '../lib/doctypes.js';
+import { DOC_TYPES, FIELDS, FIELD_LABELS, fieldLabel, fundsOf, typeName, typeOf } from '../lib/doctypes.js';
 import { bytes } from '../lib/format.js';
 import {
   MONTHS, SKIP_FILE, cellInvalid, detectMonth, detectYear, formatAmount, groupKey, normalizeDate, parseAmount, parseName, rowProblems,
@@ -189,8 +189,9 @@ function StepDetails({ w, update, go, funds }) {
           <h3>Folder details</h3>
           <p className="help" style={{ marginTop: '-.5rem', marginBottom: '1rem' }}>These apply to every record in this folder.</p>
           <div className="fields">
-            <div><label className="field-label" htmlFor="dt">Document type <span className="req">*</span></label>
-              <Select id="dt" value={b.docType} onChange={set('docType')}>{DOC_TYPES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}</Select></div>
+            <div><label className="field-label" htmlFor="dt">Main document type <span className="req">*</span></label>
+              <Select id="dt" value={b.docType} onChange={set('docType')}>{DOC_TYPES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}</Select>
+              <div className="help">What the folder is filed as. You state the type of each document in it in step 4.</div></div>
             <div><label className="field-label" htmlFor="fy">Fiscal year <span className="req">*</span></label>
               <Select id="fy" value={b.fiscalYear} onChange={set('fiscalYear')}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</Select></div>
             <div><label className="field-label" htmlFor="mo">Month</label>
@@ -228,7 +229,7 @@ function buildRows(w, mode) {
   const prev = new Map(w.rows.map((r) => [r.key, r]));
   return [...groups.entries()].map(([key, files]) => {
     if (prev.has(key)) return { ...prev.get(key), files };
-    const row = { key, files, auto: {} };
+    const row = { key, files, auto: {}, docType: '' }; // the uploader states each record's type
     FIELDS.forEach((k) => { row[k] = ''; });
     for (const src of [key.split('/').pop(), ...files.map((f) => f.name)]) {
       for (const [k, v] of Object.entries(parseName(src))) if (!row[k] && v) { row[k] = v; row.auto[k] = true; }
@@ -281,16 +282,17 @@ function StepGroup({ w, update, go }) {
 
 // ---------- step 4: the details of each record ----------
 function StepGrid({ w, update, go }) {
-  const t = typeOf(w.batch.docType);
+  const main = typeOf(w.batch.docType);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
   const [peek, setPeek] = useState(null); // { row, file }: the pop-up showing a record's files
   const rows = w.rows;
   const setRows = (list) => update({ rows: list });
-  const issues = rows.map((r, i) => ({ i, bad: rowProblems(w.batch.docType, r) })).filter((x) => x.bad.length);
+  const issues = rows.map((r, i) => ({ i, bad: rowProblems(r.docType, r) })).filter((x) => x.bad.length);
   const autoCount = rows.reduce((s, r) => s + Object.keys(r.auto).length, 0);
   const refCounts = {};
-  rows.forEach((r) => { const k = String(r.refNo).trim().toLowerCase(); if (k) refCounts[k] = (refCounts[k] || 0) + 1; });
+  const refKey = (r) => (String(r.refNo).trim() ? `${r.docType}|${String(r.refNo).trim().toLowerCase()}` : '');
+  rows.forEach((r) => { const k = refKey(r); if (k) refCounts[k] = (refCounts[k] || 0) + 1; });
 
   const setCell = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v, auto: { ...r.auto, [k]: false } } : r)));
   const tidy = (i, k) => {
@@ -323,29 +325,32 @@ function StepGrid({ w, update, go }) {
   const next = async () => {
     if (issues.length) { document.getElementById(`c-${issues[0].i}-${issues[0].bad[0]}`)?.focus(); return; }
     setChecking(true); setError('');
-    try { update({ dups: await existingRefs(w.batch.docType, rows.map((r) => r.refNo)) }); go(4); } catch (e) { setError(e.message); } finally { setChecking(false); }
+    try { update({ dups: await existingRefs(rows) }); go(4); } catch (e) { setError(e.message); } finally { setChecking(false); }
   };
-  const dupSet = new Set(w.dups.map((d) => d.refKey));
+  const dupSet = new Set(w.dups.map((d) => `${d.docType}|${d.refKey}`));
 
   return (
     <>
       <Summary w={w} />
       <div className="card">
-        <div className="card-head"><h3>Details: {t.name}</h3><span className="small muted">Required: {t.required.map((k) => fieldLabel(t.code, k)).join(', ')}</span></div>
+        <div className="card-head"><h3>Details of each document</h3><span className="small muted">Folder: {main.name}</span></div>
         <div className="alert alert-info small">
           {autoCount > 0 && <><b>{autoCount}</b> value{autoCount === 1 ? ' was' : 's were'} read from the file and folder names and {autoCount === 1 ? 'is' : 'are'} shown in <span className="auto-sample">blue italics</span>: please check them. </>}
-          Click a record's name to see its file while you type. Click a cell to type; Enter moves down. <b>⇩</b> fills the empty cells below with the value above. You can paste rows copied from Excel. Dates: YYYY-MM-DD or MM/DD/YYYY.
+          Choose the <b>type</b> of each document first (the DV, or a supporting document such as the OBR or invoice); the details it needs follow its type. Click a record's name to see its file while you type. Click a cell to type; Enter moves down. <b>⇩</b> fills the empty cells below with the value above. You can paste rows copied from Excel. Dates: YYYY-MM-DD or MM/DD/YYYY.
         </div>
         {issues.length ? <div className="alert small">{issues.length} record{issues.length === 1 ? '' : 's'} still need{issues.length === 1 ? 's' : ''} a required or valid value (in red).</div>
           : <div className="alert alert-ok small">All {rows.length} records have their required details.</div>}
         <div className="meta-grid">
           <table>
-            <thead><tr><th>#</th><th>Record</th>{GRID.map((k) => (
-              <th key={k} style={{ minWidth: WIDTH[k] }}>{fieldLabel(t.code, k)}{t.required.includes(k) && <span className="req"> *</span>}
+            <thead><tr><th>#</th><th>Record</th>
+              <th style={{ minWidth: 220 }}>Type<span className="req"> *</span>
+                <button type="button" className="fill-down" title="Fill the empty cells below" onClick={() => fillDown('docType')}>⇩</button></th>
+              {GRID.map((k) => (
+              <th key={k} style={{ minWidth: WIDTH[k] }}>{FIELD_LABELS[k]}
                 <button type="button" className="fill-down" title="Fill the empty cells below" onClick={() => fillDown(k)}>⇩</button></th>
             ))}</tr></thead>
             <tbody>{rows.map((r, i) => {
-              const rk = String(r.refNo).trim().toLowerCase();
+              const rk = refKey(r);
               const dup = rk && (dupSet.has(rk) || refCounts[rk] > 1);
               return (
                 <tr key={r.key} className={dup ? 'dup' : ''} title={dup ? 'This reference no. is already in the archive or repeated in this folder' : undefined}>
@@ -358,9 +363,11 @@ function StepGrid({ w, update, go }) {
                         <span key={f.rel}>{j ? ', ' : ''}<button type="button" className="link file-link" title={f.rel} onClick={() => setPeek({ row: i, file: j })}>{f.name}</button></span>
                       ))}</span>
                   </td>
+                  <td className={`type-cell${r.docType ? '' : ' missing'}`}>
+                    <TypeSelect id={`c-${i}-docType`} value={r.docType} label={`Type, row ${i + 1}`} onChange={(v) => setCell(i, 'docType', v)} /></td>
                   {GRID.map((k) => (
-                    <td key={k}><input id={`c-${i}-${k}`} value={r[k]} aria-label={`${fieldLabel(t.code, k)}, row ${i + 1}`}
-                      className={`${r.auto[k] ? 'auto' : ''} ${cellInvalid(t.code, r, k) ? 'missing' : ''}`}
+                    <td key={k}><input id={`c-${i}-${k}`} value={r[k]} aria-label={`${fieldLabel(r.docType, k)}, row ${i + 1}`}
+                      className={`${r.auto[k] ? 'auto' : ''} ${cellInvalid(r.docType, r, k) ? 'missing' : ''}`}
                       onChange={(e) => setCell(i, k, e.target.value)} onBlur={() => tidy(i, k)}
                       onPaste={(e) => onPaste(e, i, k)} onKeyDown={(e) => onKey(e, i, k)} /></td>
                   ))}
@@ -371,7 +378,7 @@ function StepGrid({ w, update, go }) {
         </div>
         {error && <div className="alert" style={{ marginTop: '1rem' }}>{error}</div>}
       </div>
-      {peek && <FilePeek rows={rows} docType={t.code} peek={peek} setPeek={setPeek} setCell={setCell} tidy={tidy} />}
+      {peek && <FilePeek rows={rows} peek={peek} setPeek={setPeek} setCell={setCell} tidy={tidy} />}
       <div className="row wizard-nav">
         <button className="btn" onClick={() => go(2)}>Back</button>
         <button className="btn btn-primary" disabled={checking} onClick={next}>{checking ? 'Checking…' : 'Next: Review and upload'}</button>
@@ -380,10 +387,21 @@ function StepGrid({ w, update, go }) {
   );
 }
 
+// A record's document type: the main documents first, then the supporting ones. Empty until chosen.
+function TypeSelect({ id, value, label, onChange }) {
+  return (
+    <Select id={id} value={value} aria-label={label} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Choose the type…</option>
+      {DOC_TYPES.map((x) => <option key={x.code} value={x.code}>{x.supporting ? `${x.name} (supporting)` : x.name}</option>)}
+    </Select>
+  );
+}
+
 // The files of one record in a pop-up, beside its details: read the scanned DV and type what it
 // says. Previous / Next go through the records; Escape closes.
-function FilePeek({ rows, docType, peek, setPeek, setCell, tidy }) {
+function FilePeek({ rows, peek, setPeek, setCell, tidy }) {
   const r = rows[peek.row];
+  const { docType } = r;
   const f = r.files[peek.file] || r.files[0];
   const go = (row) => setPeek({ row, file: 0 });
   const close = () => setPeek(null);
@@ -414,9 +432,13 @@ function FilePeek({ rows, docType, peek, setPeek, setCell, tidy }) {
             <div className="peek-viewer"><FilePreview key={f.rel} file={{ name: f.name, type: f.file.type }} local={f.file} /></div>
           </div>
           <div className="peek-fields">
+            <div className={`field${docType ? '' : ' invalid'}`}>
+              <label className="field-label" htmlFor="p-docType">Type of this document<span className="req"> *</span></label>
+              <TypeSelect id="p-docType" value={docType} label="Type of this document" onChange={(v) => setCell(peek.row, 'docType', v)} />
+            </div>
             {GRID.map((k) => (
               <div key={k} className={`field${cellInvalid(docType, r, k) ? ' invalid' : ''}`}>
-                <label className="field-label" htmlFor={`p-${k}`}>{fieldLabel(docType, k)}{typeOf(docType).required.includes(k) && <span className="req"> *</span>}</label>
+                <label className="field-label" htmlFor={`p-${k}`}>{fieldLabel(docType, k)}{docType && typeOf(docType).required.includes(k) && <span className="req"> *</span>}</label>
                 {k === 'particulars'
                   ? <textarea id={`p-${k}`} value={r[k]} onChange={(e) => setCell(peek.row, k, e.target.value)} />
                   : <input id={`p-${k}`} value={r[k]} className={r.auto[k] ? 'auto-input' : ''} onChange={(e) => setCell(peek.row, k, e.target.value)} onBlur={() => tidy(peek.row, k)} />}
@@ -436,7 +458,7 @@ function FilePeek({ rows, docType, peek, setPeek, setCell, tidy }) {
 function StepUpload({ w, go, actor, restart, redraw }) {
   const t = typeOf(w.batch.docType);
   const totalBytes = w.files.reduce((s, f) => s + f.size, 0);
-  const repeated = Object.entries(w.rows.reduce((m, r) => { const k = String(r.refNo).trim(); if (k) m[k] = (m[k] || 0) + 1; return m; }, {})).filter(([, n]) => n > 1);
+  const repeated = Object.entries(w.rows.reduce((m, r) => { const k = String(r.refNo).trim(); if (k) { const key = `${r.docType} ${k}`; m[key] = (m[key] || 0) + 1; } return m; }, {})).filter(([, n]) => n > 1);
   const [error, setError] = useState('');
 
   const run = async (indexes) => {
@@ -496,11 +518,13 @@ function StepUpload({ w, go, actor, restart, redraw }) {
           <h3>Review</h3>
           <dl className="details">
             <dt>Folder</dt><dd>{w.batch.folderName}</dd>
-            <dt>Document type</dt><dd>{t.name}</dd>
+            <dt>Main document type</dt><dd>{t.name}</dd>
             <dt>Fiscal year</dt><dd>{w.batch.fiscalYear}{w.batch.month ? ` · ${MONTHS[w.batch.month - 1]}` : ''}</dd>
             <dt>Fund</dt><dd>{w.batch.fund || '—'}</dd>
             <dt>Filed at</dt><dd>{[w.batch.boxNo && `Box ${w.batch.boxNo}`, w.batch.location].filter(Boolean).join(' · ') || '—'}</dd>
             <dt>Records</dt><dd>{w.rows.length}</dd>
+            <dt>By type</dt><dd>{Object.entries(w.rows.reduce((m, r) => ({ ...m, [r.docType]: (m[r.docType] || 0) + 1 }), {}))
+              .map(([code, n]) => `${typeName(code)} × ${n}`).join(', ')}</dd>
             <dt>Files</dt><dd>{w.files.length} ({bytes(totalBytes)})</dd>
           </dl>
         </div>

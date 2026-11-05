@@ -58,25 +58,39 @@ until an administrator approves it and gives it a role. The owner's address
 
 ## 4. Minimum metadata
 
-**Batch level (folder):** Document type · Fiscal year · Month · Fund · Box no. · Shelf/location · Remarks
+**Folder level:** **Main document type** (what the folder is filed as, e.g. DV) · Fiscal year · Month · Fund ·
+Box no. · Shelf/location · Remarks
 
-**Record level (per document)**, by type:
+**Record level (each document in the folder):** the uploader **states the type of every document**. It is
+the main document (e.g. the DV), or a supporting document. The details it needs follow its own type:
 
-| Document type | Required | Optional |
-|---------------|----------|----------|
-| Disbursement Voucher (DV) | DV No., Date, Payee, Amount | Particulars, ORS/OBR No., Check No., Responsibility Center |
-| Payroll | Reference No., Date, Amount | Particulars (period, office) |
-| Purchase Order / Purchase Request | PO/PR No., Date, Payee/Supplier | Amount, Particulars |
-| ORS / OBR | ORS No., Date, Amount | Payee, Particulars |
-| Journal Entry Voucher (JEV) | JEV No., Date | Amount, Particulars |
-| Liquidation Report | Reference No., Date, Amount | Payee, Particulars |
-| Official Receipt | OR No., Date, Payee, Amount | Particulars |
-| Contract / MOA | Reference No., Date, Payee | Amount, Particulars |
-| Report (Financial / COA) | Title (in Particulars), Date | — |
-| Other | Reference No. | everything else |
+| Document type | Kind | Required |
+|---------------|------|----------|
+| Disbursement Voucher (DV) | main | DV No., Date, Payee, Amount |
+| Payroll | main | Payroll No., Date, Amount |
+| Journal Entry Voucher (JEV) | main | JEV No., Date |
+| Liquidation Report | main | LR No., Date, Amount |
+| Contract / MOA | main | Contract No., Date, Payee |
+| Report (Financial / COA) | main | Date, Particulars |
+| Obligation Request (OBR / ORS) | supporting | OBR No., Date, Amount |
+| Purchase Request | supporting | PR No., Date |
+| Request for Quotation | supporting | Date |
+| Abstract of Canvass / Bids | supporting | Date |
+| Purchase Order | supporting | PO No., Date, Payee |
+| Invoice / Billing Statement | supporting | Date, Payee |
+| Delivery Receipt | supporting | Date |
+| Inspection and Acceptance Report | supporting | Date |
+| Official Receipt | supporting | OR No., Date, Payee, Amount |
+| Travel Order / Itinerary | supporting | Date |
+| Certification | supporting | Date |
+| Other supporting document | supporting | none |
 
-The list of types and required fields lives in one place
-(`src/doctypes.js`), so the office can change it easily.
+Optional for every type: Reference No., Particulars, OBR/ORS No., Check No., Resp. Center.
+Amounts are never added up: a DV and its supporting documents carry the same amount.
+
+The list of types and required fields lives in one place (`src/lib/doctypes.js`), so the office can
+change it easily. The rules accept any type code of 2–12 capital letters, so adding a type needs no
+rules change.
 
 ## 5. Architecture
 

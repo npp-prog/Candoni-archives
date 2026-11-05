@@ -75,7 +75,7 @@ export default function Dashboard() {
             <div className="card-head pad"><h3>Recent uploads</h3><Link className="btn btn-sm" to="/folders">All folders</Link></div>
             {s.recent.length ? (
               <table className="data-table">
-                <thead><tr><th>Folder</th><th>Type</th><th>FY</th><th className="right">Records</th><th className="right">Files</th><th>Status</th><th>Uploaded</th></tr></thead>
+                <thead><tr><th>Folder</th><th>Main type</th><th>FY</th><th className="right">Records</th><th className="right">Files</th><th>Status</th><th>Uploaded</th></tr></thead>
                 <tbody>{s.recent.map((b) => (
                   <tr key={b.id}>
                     <td><Link to={`/folders/${b.id}`}>{b.folderName}</Link></td><td>{b.docType}</td><td>{b.fiscalYear || ''}</td>

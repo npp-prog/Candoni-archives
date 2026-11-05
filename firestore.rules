@@ -46,8 +46,10 @@ service cloud.firestore {
     function optStr(d, key, max) {
       return !(key in d) || d[key] == null || str(d[key], max);
     }
-    function docTypes() {
-      return ['DV', 'PAYROLL', 'PO', 'PR', 'OBR', 'JEV', 'LR', 'OR', 'CONTRACT', 'REPORT', 'OTHER'];
+    // A document type code (src/lib/doctypes.js), checked by its form so that adding a type there
+    // needs no change here.
+    function isTypeCode(v) {
+      return v is string && v.matches('^[A-Z]{2,12}$');
     }
 
     // ---- Accounts ----
@@ -92,7 +94,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['folderName', 'docType', 'fiscalYear', 'month', 'fund', 'boxNo', 'location', 'remarks',
           'status', 'expectedFiles', 'fileCount', 'recordCount', 'totalBytes', 'by', 'byName', 'createdAt'])
         && str(request.resource.data.folderName, 200)
-        && request.resource.data.docType in docTypes()
+        && isTypeCode(request.resource.data.docType)
         && request.resource.data.status == 'uploading'
         && request.resource.data.fileCount == 0 && request.resource.data.totalBytes == 0
         && optStr(request.resource.data, 'boxNo', 60) && optStr(request.resource.data, 'location', 200)
@@ -113,7 +115,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['batchId', 'folderName', 'groupKey', 'docType', 'refNo', 'refKey', 'docDate', 'payee', 'amount',
           'particulars', 'orsNo', 'checkNo', 'respCenter', 'fund', 'fiscalYear', 'month', 'boxNo', 'location', 'files', 'fileCount',
           'keywords', 'createdBy', 'createdByName', 'createdAt'])
-        && request.resource.data.docType in docTypes()
+        && isTypeCode(request.resource.data.docType)
         && exists(/databases/$(database)/documents/batches/$(request.resource.data.batchId))
         && request.resource.data.files.size() == 0 && request.resource.data.fileCount == 0
         && optStr(request.resource.data, 'refNo', 120) && optStr(request.resource.data, 'payee', 200)
@@ -121,8 +123,9 @@ service cloud.firestore {
         && (request.resource.data.amount == null || request.resource.data.amount is number)
         && request.resource.data.keywords is list && request.resource.data.keywords.size() <= 800;
       allow update: if canUpload()
-        && changed().hasOnly(['refNo', 'refKey', 'docDate', 'payee', 'amount', 'particulars', 'orsNo', 'checkNo', 'respCenter',
+        && changed().hasOnly(['docType', 'refNo', 'refKey', 'docDate', 'payee', 'amount', 'particulars', 'orsNo', 'checkNo', 'respCenter',
           'boxNo', 'location', 'files', 'fileCount', 'keywords', 'updatedAt', 'updatedBy'])
+        && isTypeCode(request.resource.data.docType)
         && optStr(request.resource.data, 'refNo', 120) && optStr(request.resource.data, 'payee', 200)
         && optStr(request.resource.data, 'particulars', 2000)
         && (request.resource.data.amount == null || request.resource.data.amount is number)

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalizeDate, parseAmount, parseName, detectYear, detectMonth, cellInvalid, groupKey, keywordsOf, matchesWords, csvCell, safePath,
+  normalizeDate, parseAmount, parseName, detectYear, detectMonth, cellInvalid, rowProblems, groupKey, keywordsOf, matchesWords, csvCell, safePath,
 } from './names.js';
 
 test('normalizeDate', () => {
@@ -44,6 +44,9 @@ test('required and malformed cells', () => {
   assert.equal(cellInvalid('DV', { docDate: '2026-13-01' }, 'docDate'), true);
   assert.equal(cellInvalid('DV', { amount: '1,000' }, 'amount'), false);
   assert.equal(cellInvalid('JEV', { amount: '' }, 'amount'), false);
+  assert.equal(cellInvalid('DR', { refNo: '' }, 'refNo'), false);
+  assert.deepEqual(rowProblems('', { docDate: 'x' }), ['docType', 'docDate']);
+  assert.deepEqual(rowProblems('OTHER', {}), []);
 });
 
 test('grouping files into records', () => {

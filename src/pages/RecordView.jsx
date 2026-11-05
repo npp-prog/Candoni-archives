@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
 import FilePreview from '../components/FilePreview.jsx';
+import Select from '../components/Select.jsx';
 import { addFiles, audit, auditOf, deleteFile, deleteRecord, downloadFile, fileUrl, getRecord, updateRecord } from '../lib/api.js';
-import { FIELDS, fieldLabel, typeName, typeOf } from '../lib/doctypes.js';
+import { DOC_TYPES, FIELDS, fieldLabel, typeName, typeOf } from '../lib/doctypes.js';
 import { bytes, day, isPreviewable, money, when } from '../lib/format.js';
 import { MONTHS, formatAmount, rowProblems } from '../lib/names.js';
 
@@ -48,11 +49,13 @@ export default function RecordView() {
   if (r === undefined) return <div className="spinner" />;
   if (!r) return <div className="card empty">This record no longer exists. <Link to="/archive">Search the archives</Link></div>;
   const t = typeOf(r.docType);
-  const L = (k) => fieldLabel(r.docType, k);
+  // while editing, the labels and required details follow the type being chosen
+  const et = edit ? typeOf(edit.docType) : t;
+  const L = (k) => fieldLabel(edit ? edit.docType : r.docType, k);
   const show = (k) => (k === 'amount' ? money(r.amount) : k === 'docDate' ? day(r.docDate) : r[k]) || '—';
 
-  const startEdit = () => setEdit(Object.fromEntries(FIELDS.map((k) => [k, k === 'amount' ? formatAmount(r.amount) : r[k] ?? ''])));
-  const problems = edit ? rowProblems(r.docType, edit) : [];
+  const startEdit = () => setEdit({ docType: r.docType, ...Object.fromEntries(FIELDS.map((k) => [k, k === 'amount' ? formatAmount(r.amount) : r[k] ?? ''])) });
+  const problems = edit ? rowProblems(edit.docType, edit) : [];
   const save = async () => {
     if (problems.length) return;
     setBusy('Saving…');
@@ -102,9 +105,15 @@ export default function RecordView() {
             {edit ? (
               <>
                 <div className="fields one-col">
+                  <div className="field">
+                    <label className="field-label" htmlFor="e-docType">Type of document <span className="req">*</span></label>
+                    <Select id="e-docType" value={edit.docType} onChange={(e) => setEdit({ ...edit, docType: e.target.value })}>
+                      {DOC_TYPES.map((x) => <option key={x.code} value={x.code}>{x.supporting ? `${x.name} (supporting)` : x.name}</option>)}
+                    </Select>
+                  </div>
                   {FIELDS.map((k) => (
                     <div key={k} className={`field${problems.includes(k) ? ' invalid' : ''}`}>
-                      <label className="field-label" htmlFor={`e-${k}`}>{L(k)}{t.required.includes(k) && <span className="req"> *</span>}</label>
+                      <label className="field-label" htmlFor={`e-${k}`}>{L(k)}{et.required.includes(k) && <span className="req"> *</span>}</label>
                       {k === 'particulars'
                         ? <textarea id={`e-${k}`} value={edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} />
                         : <input id={`e-${k}`} type={k === 'docDate' ? 'date' : 'text'} inputMode={k === 'amount' ? 'decimal' : undefined}
