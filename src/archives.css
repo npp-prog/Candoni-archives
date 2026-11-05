@@ -148,3 +148,8 @@
 /* folder details locked while adding to a folder already in the archive */
 .plain-fieldset { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
 .ss-trigger:disabled { background-color: var(--sunken); color: #64748b; cursor: not-allowed; }
+
+/* the Preview (eye) button at the start of a record row */
+.data-table td.peek-cell { width: 1%; padding-right: 0; }
+.data-table td.peek-cell .btn-icon { color: var(--primary); }
+.peek-fields .details { grid-template-columns: max-content minmax(0, 1fr); }

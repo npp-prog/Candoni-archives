@@ -113,12 +113,21 @@ service cloud.firestore {
         && optStr(request.resource.data, 'remarks', 2000)
         // created together with its lock: no other folder has the same name, type and fund
         && getAfter(/databases/$(database)/documents/folderLocks/$(folderKeyOf(request.resource.data))).data.batchId == id;
-      // name, type and fund never change (the lock is named after them)
+      // files added (by any Records Officer or admin): the counts and status
       allow update: if canUpload()
-        && changed().hasOnly(['status', 'fileCount', 'recordCount', 'totalBytes', 'expectedFiles', 'boxNo', 'location', 'remarks', 'updatedAt'])
-        && request.resource.data.status in ['uploading', 'complete', 'incomplete']
+        && changed().hasOnly(['status', 'fileCount', 'recordCount', 'totalBytes', 'expectedFiles', 'updatedAt'])
+        && request.resource.data.status in ['uploading', 'complete', 'incomplete'];
+      // Edit folder: its uploader or an administrator. A new name, type or fund moves the folder's lock
+      // in the same write (the new lock must point here), so it cannot become a duplicate either.
+      allow update: if canUpload() && (resource.data.by == request.auth.uid || isAdmin())
+        && changed().hasOnly(['folderName', 'docType', 'fiscalYear', 'month', 'fund', 'boxNo', 'location', 'remarks', 'updatedAt', 'updatedBy'])
+        && str(request.resource.data.folderName, 200) && request.resource.data.folderName.size() > 0
+        && isTypeCode(request.resource.data.docType)
+        && optStr(request.resource.data, 'fund', 100)
         && optStr(request.resource.data, 'boxNo', 60) && optStr(request.resource.data, 'location', 200)
-        && optStr(request.resource.data, 'remarks', 2000);
+        && optStr(request.resource.data, 'remarks', 2000)
+        && (folderKeyOf(request.resource.data) == folderKeyOf(resource.data)
+          || getAfter(/databases/$(database)/documents/folderLocks/$(folderKeyOf(request.resource.data))).data.batchId == id);
       allow delete: if isAdmin();
     }
 
@@ -132,7 +141,10 @@ service cloud.firestore {
         && request.resource.data.batchId is string
         && existsAfter(batchPath(request.resource.data.batchId))
         && folderKeyOf(getAfter(batchPath(request.resource.data.batchId)).data) == key;
-      allow delete: if isAdmin();
+      // an administrator; or, when a folder is edited to a new name, type or fund, its old lock
+      allow delete: if isAdmin()
+        || (canUpload() && existsAfter(batchPath(resource.data.batchId))
+          && folderKeyOf(getAfter(batchPath(resource.data.batchId)).data) != key);
     }
 
     // ---- Archived records (one document or transaction, with its files) ----
@@ -152,7 +164,7 @@ service cloud.firestore {
         && request.resource.data.keywords is list && request.resource.data.keywords.size() <= 800;
       allow update: if canUpload()
         && changed().hasOnly(['docType', 'refNo', 'refKey', 'docDate', 'payee', 'amount', 'particulars', 'orsNo', 'checkNo', 'respCenter',
-          'boxNo', 'location', 'files', 'fileCount', 'keywords', 'updatedAt', 'updatedBy'])
+          'folderName', 'fund', 'fiscalYear', 'month', 'boxNo', 'location', 'files', 'fileCount', 'keywords', 'updatedAt', 'updatedBy'])
         && isTypeCode(request.resource.data.docType)
         && optStr(request.resource.data, 'refNo', 120) && optStr(request.resource.data, 'payee', 200)
         && optStr(request.resource.data, 'particulars', 2000)

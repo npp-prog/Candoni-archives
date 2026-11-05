@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
-import { audit, ensureFolderLocks, fileBlob, getBatch, listBatches, recordsOfBatch, saveBlob, updateBatchLocation } from '../lib/api.js';
-import { typeName } from '../lib/doctypes.js';
+import RecordPeek from '../components/RecordPeek.jsx';
+import { audit, ensureFolderLocks, fileBlob, getBatch, listBatches, recordsOfBatch, saveBlob, updateFolder } from '../lib/api.js';
+import { DOC_TYPES, fundsOf, typeName } from '../lib/doctypes.js';
+import Select from '../components/Select.jsx';
 import { bytes, day, money, when } from '../lib/format.js';
 import { MONTHS, safeName, toCsv } from '../lib/names.js';
 
@@ -58,22 +60,40 @@ export default function Folders() {
 export function FolderView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { canUpload, actor } = useAuth();
+  const { user, canUpload, isAdmin, actor, settings } = useAuth();
   const [b, setB] = useState(null);
   const [recs, setRecs] = useState(null);
   const [error, setError] = useState('');
   const [edit, setEdit] = useState(null);
+  const [editError, setEditError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [zip, setZip] = useState('');
   const [zipping, setZipping] = useState(false);
+  const [peek, setPeek] = useState(null); // index of the record previewed
   const load = () => Promise.all([getBatch(id), recordsOfBatch(id)]).then(([bb, rr]) => { setB(bb); setRecs(rr); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) return <div className="alert">{error}</div>;
   if (!b || !recs) return b === null && recs ? <div className="card empty">This folder no longer exists.</div> : <div className="spinner" />;
 
-  const save = async () => {
-    try { await updateBatchLocation(b, edit, actor); setEdit(null); load(); } catch (e) { setError(e.message); }
+  // Edit folder: the person who uploaded it, or an administrator (firestore.rules)
+  const canEdit = canUpload && (b.by === user.uid || isAdmin);
+  const startEdit = () => {
+    setEditError('');
+    setEdit({
+      folderName: b.folderName || '', docType: b.docType, fiscalYear: String(b.fiscalYear || ''), month: String(b.month || ''),
+      fund: b.fund || '', boxNo: b.boxNo || '', location: b.location || '', remarks: b.remarks || '',
+    });
   };
+  const save = async () => {
+    setSaving(true); setEditError('');
+    try { await updateFolder(b, edit, actor); setEdit(null); await load(); } catch (e) {
+      setEditError(e.code === 'permission-denied' ? 'Not allowed: only the person who uploaded this folder, or an administrator, may edit it.' : e.message);
+    } finally { setSaving(false); }
+  };
+  const set = (k) => (e) => setEdit({ ...edit, [k]: e.target.value });
+  const years = Array.from({ length: 40 }, (_, i) => String(new Date().getFullYear() + 1 - i));
+  const funds = [...new Set([...fundsOf(settings), ...(b.fund ? [b.fund] : [])])];
 
   // The whole folder as one ZIP: a folder per record, and index.csv.
   const downloadZip = async () => {
@@ -121,13 +141,25 @@ export function FolderView() {
       <div className="grid-2">
         <div className="card">
           <div className="card-head"><h3>Folder details</h3>
-            {canUpload && !edit && <button className="btn btn-sm" onClick={() => setEdit({ boxNo: b.boxNo || '', location: b.location || '', remarks: b.remarks || '' })}><Icon name="edit" />Edit where filed</button>}</div>
+            {canEdit && !edit && <button className="btn btn-sm" onClick={startEdit}><Icon name="edit" />Edit folder</button>}</div>
           {edit ? (
             <div className="fields one-col">
-              <div><label className="field-label" htmlFor="bx">Box no.</label><input id="bx" value={edit.boxNo} onChange={(e) => setEdit({ ...edit, boxNo: e.target.value })} /></div>
-              <div><label className="field-label" htmlFor="lc">Shelf / location</label><input id="lc" value={edit.location} onChange={(e) => setEdit({ ...edit, location: e.target.value })} /></div>
-              <div><label className="field-label" htmlFor="rm">Remarks</label><textarea id="rm" value={edit.remarks} onChange={(e) => setEdit({ ...edit, remarks: e.target.value })} /></div>
-              <div className="row gap"><button className="btn btn-primary" onClick={save}>Save</button><button className="btn" onClick={() => setEdit(null)}>Cancel</button></div>
+              <div><label className="field-label" htmlFor="ef-name">Folder name <span className="req">*</span></label><input id="ef-name" value={edit.folderName} onChange={set('folderName')} /></div>
+              <div><label className="field-label" htmlFor="ef-type">Main document type <span className="req">*</span></label>
+                <Select id="ef-type" value={edit.docType} onChange={set('docType')}>{DOC_TYPES.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</Select></div>
+              <div><label className="field-label" htmlFor="ef-year">Fiscal year</label>
+                <Select id="ef-year" value={edit.fiscalYear} onChange={set('fiscalYear')}><option value="">None</option>{years.map((y) => <option key={y} value={y}>{y}</option>)}</Select></div>
+              <div><label className="field-label" htmlFor="ef-month">Month</label>
+                <Select id="ef-month" value={edit.month} onChange={set('month')}><option value="">Whole year or mixed</option>{MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}</Select></div>
+              <div><label className="field-label" htmlFor="ef-fund">Fund</label>
+                <Select id="ef-fund" value={edit.fund} onChange={set('fund')}><option value="">None</option>{funds.map((f) => <option key={f}>{f}</option>)}</Select></div>
+              <div><label className="field-label" htmlFor="bx">Box no.</label><input id="bx" value={edit.boxNo} onChange={set('boxNo')} /></div>
+              <div><label className="field-label" htmlFor="lc">Shelf / location</label><input id="lc" value={edit.location} onChange={set('location')} /></div>
+              <div><label className="field-label" htmlFor="rm">Remarks</label><textarea id="rm" value={edit.remarks} onChange={set('remarks')} /></div>
+              <p className="help">The records in this folder take its new name, year, month, fund and filing location. No two folders may have the same name, main type and fund.</p>
+              {editError && <div className="alert" role="alert">{editError}</div>}
+              <div className="row gap"><button className="btn btn-primary" disabled={saving || !edit.folderName.trim()} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+                <button className="btn" disabled={saving} onClick={() => setEdit(null)}>Cancel</button></div>
             </div>
           ) : (
             <dl className="details">
@@ -154,9 +186,11 @@ export function FolderView() {
         <div className="card-head pad"><h3>Records in this folder</h3></div>
         {recs.length ? (
           <table className="data-table clickable-rows">
-            <thead><tr><th>Type</th><th>Reference No.</th><th>Date</th><th>Payee</th><th>Particulars</th><th className="right">Amount</th><th className="right">Files</th></tr></thead>
+            <thead><tr><th aria-label="Preview" /><th>Type</th><th>Reference No.</th><th>Date</th><th>Payee</th><th>Particulars</th><th className="right">Amount</th><th className="right">Files</th></tr></thead>
             <tbody>{recs.map((r) => (
               <tr key={r.id} onClick={() => navigate(`/records/${r.id}`)}>
+                <td className="peek-cell"><button type="button" className="btn-icon" title="Preview the documents" aria-label={`Preview ${r.refNo || 'record'}`}
+                  onClick={(e) => { e.stopPropagation(); setPeek(recs.indexOf(r)); }}><Icon name="eye" /></button></td>
                 <td><span className="badge badge-gold" title={typeName(r.docType)}>{r.docType}</span></td>
                 <td><Link to={`/records/${r.id}`} onClick={(e) => e.stopPropagation()}>{r.refNo || r.groupKey}</Link></td>
                 <td className="nowrap">{day(r.docDate)}</td><td>{r.payee}</td><td className="small clip">{r.particulars}</td>
@@ -166,6 +200,7 @@ export function FolderView() {
           </table>
         ) : <div className="empty">No records.</div>}
       </div>
+      {peek != null && <RecordPeek records={recs} index={peek} onIndex={setPeek} onClose={() => setPeek(null)} />}
     </div>
   );
 }

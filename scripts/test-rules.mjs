@@ -86,6 +86,29 @@ await ok(deleteDoc(doc(owner.db, 'folderLocks', folderLockId(batchData(records.u
 await denied(setDoc(doc(records.db, 'folderLocks', 'wrong|DV|'), { batchId: other.id, at: 'x' }), 'a lock not named after its folder');
 await ok(setDoc(doc(records.db, 'folderLocks', folderLockId(batchData(records.uid, { fund: 'Trust Fund' }))), { batchId: other.id, at: 'x' }), 'lock added for an existing folder');
 await denied(deleteDoc(doc(records.db, 'folderLocks', folderLockId(batchData(records.uid)))), 'Records Officer removes a lock');
+
+// Edit folder: its uploader (or an admin); a new name, type or fund moves its lock in the same write
+async function renameFolder(db, id, from, to, { moveLock = true } = {}) {
+  const wb = writeBatch(db);
+  wb.update(doc(db, 'batches', id), { ...to, updatedAt: 'x', updatedBy: 'x' });
+  if (moveLock) {
+    wb.set(doc(db, 'folderLocks', folderLockId({ ...from, ...to })), { batchId: id, at: 'x' });
+    wb.delete(doc(db, 'folderLocks', folderLockId(from)));
+  }
+  return wb.commit();
+}
+const otherData = batchData(records.uid, { fund: 'Trust Fund' });
+await ok(updateDoc(doc(owner.db, 'users', stranger.uid), { role: 'records', active: true }), 'superadmin makes a second Records Officer');
+await ok(updateDoc(doc(stranger.db, 'batches', other.id), { fileCount: 1, totalBytes: 10, updatedAt: 'x' }), 'another Records Officer adds files (counts)');
+await denied(updateDoc(doc(stranger.db, 'batches', other.id), { boxNo: 'B-9' }), 'another Records Officer edits the folder');
+await ok(updateDoc(doc(records.db, 'batches', other.id), { boxNo: 'B-9', location: 'Shelf 2', updatedAt: 'x', updatedBy: 'x' }), 'uploader edits where filed');
+await denied(renameFolder(records.db, other.id, otherData, { folderName: `${RUN} renamed` }, { moveLock: false }), 'rename without moving the lock');
+await denied(renameFolder(records.db, other.id, otherData, { fund: 'General Fund' }), 'rename onto another folder (same name, type and fund)');
+await ok(renameFolder(records.db, other.id, otherData, { folderName: `${RUN} renamed`, month: 2 }), 'uploader renames the folder (lock moved)');
+const renamed = { ...otherData, folderName: `${RUN} renamed` };
+await denied(createFolder(owner.db, batchData(owner.uid, { folderName: `${RUN} RENAMED`, fund: 'Trust Fund' })), 'a new folder with the renamed identity');
+await ok(createFolder(owner.db, batchData(owner.uid, { fund: 'Trust Fund' })), 'the old identity is free again');
+await ok(renameFolder(owner.db, other.id, renamed, { docType: 'JEV' }), 'an admin changes the main type');
 await denied(addDoc(collection(records.db, 'records'), { ...recordData(records.uid, b.id), docType: 'not a type' }), 'malformed document type');
 const r = await ok(addDoc(collection(records.db, 'records'), recordData(records.uid, b.id)), 'Records Officer creates a record');
 await denied(updateDoc(doc(records.db, 'records', r.id), { createdBy: viewer.uid }), 'change who uploaded');

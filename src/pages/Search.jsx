@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Select from '../components/Select.jsx';
 import Icon from '../components/Icon.jsx';
+import RecordPeek from '../components/RecordPeek.jsx';
 import { SEARCH_LIMIT, audit, saveBlob, searchRecords } from '../lib/api.js';
 import { DOC_TYPES, fundsOf } from '../lib/doctypes.js';
 import { day, money } from '../lib/format.js';
@@ -22,6 +23,7 @@ export default function Search() {
   const [error, setError] = useState('');
   const [sort, setSort] = useState({ key: 'docDate', dir: -1 });
   const [page, setPage] = useState(1);
+  const [peek, setPeek] = useState(null); // index (in the sorted results) of the record previewed
   const key = KEYS.map((k) => f[k]).join('|');
 
   useEffect(() => {
@@ -93,9 +95,11 @@ export default function Search() {
           {rows.length ? (
             <div className="card table-card">
               <table className="data-table clickable-rows">
-                <thead><tr><th>Type</th>{th('refNo')}{th('docDate')}{th('payee')}<th>Particulars</th>{th('amount')}<th>Filed at</th><th className="right">Files</th></tr></thead>
+                <thead><tr><th aria-label="Preview" /><th>Type</th>{th('refNo')}{th('docDate')}{th('payee')}<th>Particulars</th>{th('amount')}<th>Filed at</th><th className="right">Files</th></tr></thead>
                 <tbody>{rows.slice((page - 1) * PAGE, page * PAGE).map((r) => (
                   <tr key={r.id} onClick={() => navigate(`/records/${r.id}`)}>
+                    <td className="peek-cell"><button type="button" className="btn-icon" title="Preview the documents" aria-label={`Preview ${r.refNo || 'record'}`}
+                      onClick={(e) => { e.stopPropagation(); setPeek(rows.indexOf(r)); }}><Icon name="eye" /></button></td>
                     <td><span className="badge badge-gold">{r.docType}</span></td>
                     <td><Link to={`/records/${r.id}`} onClick={(e) => e.stopPropagation()}>{r.refNo || '—'}</Link></td>
                     <td className="nowrap">{day(r.docDate)}</td>
@@ -120,6 +124,7 @@ export default function Search() {
           )}
         </>
       )}
+      {peek != null && rows[peek] && <RecordPeek records={rows} index={peek} onIndex={setPeek} onClose={() => setPeek(null)} />}
     </div>
   );
 }
