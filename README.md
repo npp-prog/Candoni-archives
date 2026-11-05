@@ -105,10 +105,14 @@ Prices are approximate; see Google Cloud Storage pricing for the current figures
 4. Conditions: **Age** `90` days (counted from the upload, not the date on the DV), **Storage class matches**
    `Standard`, **Object name matches prefix** `archives/` → Continue → **Create**.
 
-**Or in Cloud Shell** (the `>_` button at the top of the console), with [`lifecycle.json`](lifecycle.json)
-from this repository:
+**Or in Cloud Shell** (the `>_` button at the top of the console). This writes the same rule as
+[`lifecycle.json`](lifecycle.json) in this repository, then applies it:
 
 ```bash
+cat > lifecycle.json <<'EOF'
+{"rule":[{"action":{"type":"SetStorageClass","storageClass":"COLDLINE"},
+          "condition":{"age":90,"matchesStorageClass":["STANDARD"],"matchesPrefix":["archives/"]}}]}
+EOF
 gcloud storage buckets update gs://candoni-archives.firebasestorage.app --lifecycle-file=lifecycle.json
 ```
 
