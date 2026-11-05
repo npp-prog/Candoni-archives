@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
+import FilePreview from '../components/FilePreview.jsx';
 import { addFiles, audit, auditOf, deleteFile, deleteRecord, downloadFile, fileUrl, getRecord, updateRecord } from '../lib/api.js';
 import { FIELDS, fieldLabel, typeName, typeOf } from '../lib/doctypes.js';
 import { bytes, day, isPreviewable, money, when } from '../lib/format.js';
@@ -39,7 +40,8 @@ export default function RecordView() {
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setUrl('');
-    if (current && isPreviewable(current.type)) fileUrl(current.path).then(setUrl).catch((e) => setError(e.message));
+    // for "Open" (a new tab); the preview itself is FilePreview
+    if (current && isPreviewable(current.type)) fileUrl(current.path).then(setUrl).catch(() => {});
   }, [current]);
 
   if (error) return <div className="alert">{error}</div>;
@@ -164,12 +166,7 @@ export default function RecordView() {
               </span>}
             </div>
             <div className="viewer-body">
-              {!current && <div className="empty">No file to preview.</div>}
-              {current && !isPreviewable(current.type) && <div className="empty">No preview for this file type. Use <b>Download</b>.</div>}
-              {current && isPreviewable(current.type) && !url && <div className="spinner" />}
-              {url && (current.type.startsWith('image/')
-                ? <img src={url} alt={current.name} />
-                : <iframe src={url} title={current.name} />)}
+              {current ? <FilePreview key={current.path} file={current} path={current.path} /> : <div className="empty">No file to preview.</div>}
             </div>
           </div>
         </div>

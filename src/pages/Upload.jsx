@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Select from '../components/Select.jsx';
 import Icon from '../components/Icon.jsx';
+import FilePreview from '../components/FilePreview.jsx';
 import { createBatch, existingRefs, finishBatch, uploadFile } from '../lib/api.js';
 import { DOC_TYPES, FIELDS, fieldLabel, fundsOf, typeOf } from '../lib/doctypes.js';
 import { bytes, money } from '../lib/format.js';
@@ -283,6 +284,7 @@ function StepGrid({ w, update, go }) {
   const t = typeOf(w.batch.docType);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
+  const [peek, setPeek] = useState(null); // { row, file }: the pop-up showing a record's files
   const rows = w.rows;
   const setRows = (list) => update({ rows: list });
   const issues = rows.map((r, i) => ({ i, bad: rowProblems(w.batch.docType, r) })).filter((x) => x.bad.length);
@@ -332,7 +334,7 @@ function StepGrid({ w, update, go }) {
         <div className="card-head"><h3>Details: {t.name}</h3><span className="small muted">Required: {t.required.map((k) => fieldLabel(t.code, k)).join(', ')}</span></div>
         <div className="alert alert-info small">
           {autoCount > 0 && <><b>{autoCount}</b> value{autoCount === 1 ? ' was' : 's were'} read from the file and folder names and {autoCount === 1 ? 'is' : 'are'} shown in <span className="auto-sample">blue italics</span>: please check them. </>}
-          Click a cell to type; Enter moves down. <b>⇩</b> fills the empty cells below with the value above. You can paste rows copied from Excel. Dates: YYYY-MM-DD or MM/DD/YYYY.
+          Click a record's name to see its file while you type. Click a cell to type; Enter moves down. <b>⇩</b> fills the empty cells below with the value above. You can paste rows copied from Excel. Dates: YYYY-MM-DD or MM/DD/YYYY.
         </div>
         {issues.length ? <div className="alert small">{issues.length} record{issues.length === 1 ? '' : 's'} still need{issues.length === 1 ? 's' : ''} a required or valid value (in red).</div>
           : <div className="alert alert-ok small">All {rows.length} records have their required details.</div>}
@@ -348,7 +350,14 @@ function StepGrid({ w, update, go }) {
               return (
                 <tr key={r.key} className={dup ? 'dup' : ''} title={dup ? 'This reference no. is already in the archive or repeated in this folder' : undefined}>
                   <td className="idx">{i + 1}</td>
-                  <td className="group"><b>{r.key.split('/').pop()}</b><span className="files-mini" title={r.files.map((f) => f.rel).join('\n')}>{r.files.length} file{r.files.length === 1 ? '' : 's'}: {r.files.map((f) => f.name).join(', ')}</span></td>
+                  <td className="group">
+                    <button type="button" className="peek-open" title="See the file" onClick={() => setPeek({ row: i, file: 0 })}>
+                      <Icon name="eye" /><b>{r.key.split('/').pop()}</b></button>
+                    <span className="files-mini">{r.files.length} file{r.files.length === 1 ? '' : 's'}:{' '}
+                      {r.files.map((f, j) => (
+                        <span key={f.rel}>{j ? ', ' : ''}<button type="button" className="link file-link" title={f.rel} onClick={() => setPeek({ row: i, file: j })}>{f.name}</button></span>
+                      ))}</span>
+                  </td>
                   {GRID.map((k) => (
                     <td key={k}><input id={`c-${i}-${k}`} value={r[k]} aria-label={`${fieldLabel(t.code, k)}, row ${i + 1}`}
                       className={`${r.auto[k] ? 'auto' : ''} ${cellInvalid(t.code, r, k) ? 'missing' : ''}`}
@@ -362,11 +371,64 @@ function StepGrid({ w, update, go }) {
         </div>
         {error && <div className="alert" style={{ marginTop: '1rem' }}>{error}</div>}
       </div>
+      {peek && <FilePeek rows={rows} docType={t.code} peek={peek} setPeek={setPeek} setCell={setCell} tidy={tidy} />}
       <div className="row wizard-nav">
         <button className="btn" onClick={() => go(2)}>Back</button>
         <button className="btn btn-primary" disabled={checking} onClick={next}>{checking ? 'Checking…' : 'Next: Review and upload'}</button>
       </div>
     </>
+  );
+}
+
+// The files of one record in a pop-up, beside its details: read the scanned DV and type what it
+// says. Previous / Next go through the records; Escape closes.
+function FilePeek({ rows, docType, peek, setPeek, setCell, tidy }) {
+  const r = rows[peek.row];
+  const f = r.files[peek.file] || r.files[0];
+  const go = (row) => setPeek({ row, file: 0 });
+  const close = () => setPeek(null);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const problems = rowProblems(docType, r);
+  return (
+    <div className="peek-backdrop" role="presentation" onClick={close}>
+      <div className="peek" role="dialog" aria-modal="true" aria-label={`Record ${peek.row + 1}: ${r.key}`} onClick={(e) => e.stopPropagation()}>
+        <div className="peek-head">
+          <div className="grow"><b className="clip-line">{r.key.split('/').pop()}</b>
+            <span className="small muted">Record {peek.row + 1} of {rows.length}</span></div>
+          <button type="button" className="btn btn-sm" disabled={peek.row === 0} onClick={() => go(peek.row - 1)}>Previous</button>
+          <button type="button" className="btn btn-sm" disabled={peek.row === rows.length - 1} onClick={() => go(peek.row + 1)}>Next</button>
+          <button type="button" className="btn-icon peek-close" aria-label="Close" onClick={close}>×</button>
+        </div>
+        <div className="peek-body">
+          <div className="peek-file">
+            {r.files.length > 1 && (
+              <div className="tabs peek-tabs">
+                {r.files.map((x, j) => <button key={x.rel} type="button" className={x === f ? 'active' : ''} onClick={() => setPeek({ ...peek, file: j })}>{x.name}</button>)}
+              </div>
+            )}
+            <div className="peek-viewer"><FilePreview key={f.rel} file={{ name: f.name, type: f.file.type }} local={f.file} /></div>
+          </div>
+          <div className="peek-fields">
+            {GRID.map((k) => (
+              <div key={k} className={`field${cellInvalid(docType, r, k) ? ' invalid' : ''}`}>
+                <label className="field-label" htmlFor={`p-${k}`}>{fieldLabel(docType, k)}{typeOf(docType).required.includes(k) && <span className="req"> *</span>}</label>
+                {k === 'particulars'
+                  ? <textarea id={`p-${k}`} value={r[k]} onChange={(e) => setCell(peek.row, k, e.target.value)} />
+                  : <input id={`p-${k}`} value={r[k]} className={r.auto[k] ? 'auto-input' : ''} onChange={(e) => setCell(peek.row, k, e.target.value)} onBlur={() => tidy(peek.row, k)} />}
+              </div>
+            ))}
+            {problems.length > 0
+              ? <p className="help warn-text">Still needed: {problems.map((k) => fieldLabel(docType, k)).join(', ')}.</p>
+              : <p className="help">This record has its required details.</p>}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
