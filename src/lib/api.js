@@ -2,7 +2,7 @@ import {
   addDoc, arrayUnion, collection, deleteDoc, doc, getAggregateFromServer, getCountFromServer, getDoc, getDocs, increment,
   limit, orderBy, query, serverTimestamp, setDoc, sum, updateDoc, where, writeBatch,
 } from 'firebase/firestore';
-import { deleteObject, getBlob, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from '../firebase.js';
 import { DOC_TYPES, FIELDS } from './doctypes.js';
 import { isOwnerEmail } from './owner.js';
@@ -408,14 +408,37 @@ export async function deleteFile(record, file, actor) {
 }
 
 // ---------- files ----------
-export const fileUrl = (path) => getDownloadURL(ref(storage, path));
-export const fileBlob = (path) => getBlob(ref(storage, path));
+// A file's download address (kept: asking again costs a round trip).
+const urls = new Map();
+export const fileUrl = (path) => {
+  if (!urls.has(path)) urls.set(path, getDownloadURL(ref(storage, path)).catch((e) => { urls.delete(path); throw e; }));
+  return urls.get(path);
+};
+
+// A file's bytes, for drawing it in the page, fetched straight from its download address: when the
+// bucket does not allow it (CORS not set) this fails at once instead of retrying for a quarter of a
+// minute as the Storage library does. The last files read are kept, so going back is instant, and
+// prefetchFile reads the next one ahead.
+const kept = new Map(); // path → Promise<ArrayBuffer>
+const KEEP = 12;
+export function fileBytes(path) {
+  if (kept.has(path)) { const p = kept.get(path); kept.delete(path); kept.set(path, p); return p; }
+  const p = fileUrl(path).then((u) => fetch(u)).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.arrayBuffer();
+  });
+  p.catch(() => kept.delete(path));
+  kept.set(path, p);
+  while (kept.size > KEEP) kept.delete(kept.keys().next().value);
+  return p;
+}
+export const prefetchFile = (path) => { if (path) fileBytes(path).catch(() => {}); };
 
 // Saves a file: through the browser's download (needs the bucket's CORS, see README); if that is
 // not set up, the file opens in a new tab instead.
 export async function downloadFile(file) {
   try {
-    const blob = await fileBlob(file.path);
+    const blob = new Blob([await fileBytes(file.path)], { type: file.type || contentTypeOf(file.name) });
     saveBlob(blob, file.name);
   } catch {
     window.open(await fileUrl(file.path), '_blank', 'noopener');

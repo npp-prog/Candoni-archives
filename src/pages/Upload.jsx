@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import Select from '../components/Select.jsx';
 import Icon from '../components/Icon.jsx';
 import FilePreview from '../components/FilePreview.jsx';
+import SideNav from '../components/SideNav.jsx';
 import { addToBatch, createBatch, existingRefs, findSameFolder, finishBatch, getBatch, uploadFile } from '../lib/api.js';
 import { DOC_TYPES, FIELDS, FIELD_LABELS, fieldLabel, fundsOf, typeName, typeOf } from '../lib/doctypes.js';
 import { bytes } from '../lib/format.js';
@@ -473,7 +474,9 @@ function FilePeek({ rows, peek, setPeek, setCell, tidy }) {
                 {r.files.map((x, j) => <button key={x.rel} type="button" className={x === f ? 'active' : ''} onClick={() => setPeek({ ...peek, file: j })}>{x.name}</button>)}
               </div>
             )}
-            <div className="peek-viewer"><FilePreview key={f.rel} file={{ name: f.name, type: f.file.type }} local={f.file} /></div>
+            <SideNav onPrev={peek.row > 0 ? () => go(peek.row - 1) : null} onNext={peek.row < rows.length - 1 ? () => go(peek.row + 1) : null}>
+              <div className="peek-viewer"><FilePreview key={f.rel} file={{ name: f.name, type: f.file.type }} local={f.file} /></div>
+            </SideNav>
           </div>
           <div className="peek-fields">
             <div className={`field${docType ? '' : ' invalid'}`}>

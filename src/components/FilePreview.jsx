@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadPdfjs } from '../lib/pdfjs.js';
-import { contentTypeOf, fileBlob, fileUrl } from '../lib/api.js';
+import { contentTypeOf, fileBytes, fileUrl } from '../lib/api.js';
 
 const kindOf = (type) => (type === 'application/pdf' ? 'pdf'
   : type.startsWith('image/') && type !== 'image/tiff' ? 'image'
     : type === 'text/plain' ? 'text' : 'none');
 
+// Can this browser show a PDF by itself, in a frame? (Chrome and Edge on a computer can; Chrome on Android cannot.)
+const inlinePdf = typeof navigator !== 'undefined' && navigator.pdfViewerEnabled !== false;
+
 // Shows a file inside the page: a PDF drawn page by page with pdf.js, an image, or plain text.
 // file: { name, type } and either local (a File chosen on this device, before upload) or path (in
-// Storage). A file from Storage that the browser may not read (bucket CORS not set) is shown in a
-// frame instead.
+// Storage). When a stored PDF cannot be read here (the bucket's CORS not set), the browser's own PDF
+// viewer shows it, or, where there is none (phones, tablets), a button opens it.
 export default function FilePreview({ file, local = null, path = null }) {
   const type = file.type || contentTypeOf(file.name);
   const kind = kindOf(type);
@@ -22,6 +25,7 @@ export default function FilePreview({ file, local = null, path = null }) {
     let cancelled = false;
     let made = '';
     setBytes(null); setUrl(''); setError(''); setFallback(false);
+    if (kind === 'pdf') loadPdfjs().catch(() => {}); // the PDF reader loads while the file does
     (async () => {
       if (kind === 'none') return;
       if (local) {
@@ -29,7 +33,7 @@ export default function FilePreview({ file, local = null, path = null }) {
         return;
       }
       if (kind === 'pdf') {
-        try { const b = await (await fileBlob(path)).arrayBuffer(); if (!cancelled) setBytes(b); return; } catch { if (!cancelled) setFallback(true); }
+        try { const b = await fileBytes(path); if (!cancelled) setBytes(b); return; } catch { if (!cancelled) setFallback(true); }
       }
       const u = await fileUrl(path);
       if (!cancelled) setUrl(u);
@@ -40,7 +44,15 @@ export default function FilePreview({ file, local = null, path = null }) {
   if (kind === 'none') return <div className="empty">No preview for this file type. Use <b>Download</b>.</div>;
   if (error) return <div className="alert">Could not show the file: {error}</div>;
   if (kind === 'pdf' && bytes) return <PdfPages bytes={bytes} />;
-  if (kind === 'pdf' && fallback && url) return <iframe className="preview-frame" src={url} title={file.name} />;
+  if (kind === 'pdf' && fallback && url) {
+    return inlinePdf ? <iframe className="preview-frame" src={url} title={file.name} /> : (
+      <div className="empty preview-open">
+        <p>This device cannot show the PDF here.</p>
+        <a className="btn btn-primary" href={url} target="_blank" rel="noreferrer">Open the PDF</a>
+        <p className="help">An administrator can make PDFs show here on every device: README, step 3 (Storage CORS).</p>
+      </div>
+    );
+  }
   if (kind === 'image' && url) return <div className="preview-image"><img src={url} alt={file.name} /></div>;
   if (kind === 'text' && url) return <iframe className="preview-frame" src={url} title={file.name} />;
   return <div className="spinner" />;
