@@ -1,0 +1,327 @@
+import {
+  addDoc, arrayUnion, collection, deleteDoc, doc, getAggregateFromServer, getCountFromServer, getDoc, getDocs, increment,
+  limit, orderBy, query, serverTimestamp, setDoc, sum, updateDoc, where, writeBatch,
+} from 'firebase/firestore';
+import { deleteObject, getBlob, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { db, storage } from '../firebase.js';
+import { DOC_TYPES, FIELDS } from './doctypes.js';
+import { isOwnerEmail } from './owner.js';
+import { keywordsOf, matchesWords, normalizeDate, parseAmount, safePath, wordsOf } from './names.js';
+
+const nowIso = () => new Date().toISOString();
+const clean = (v, max = 200) => { const s = String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').trim(); return s ? s.slice(0, max) : null; };
+
+// ---------- accounts ----------
+
+// The user's profile; made on their first sign-in (a Viewer waiting for approval, or the owner as
+// superadmin once their email is verified).
+export async function ensureUserProfile(user, extra = {}) {
+  const r = doc(db, 'users', user.uid);
+  const owner = isOwnerEmail(user.email) && user.emailVerified;
+  const snap = await getDoc(r);
+  if (snap.exists()) {
+    const p = snap.data();
+    if (owner && (p.role !== 'superadmin' || !p.active)) {
+      await updateDoc(r, { role: 'superadmin', active: true });
+      return { id: user.uid, ...p, role: 'superadmin', active: true };
+    }
+    return { id: user.uid, ...p };
+  }
+  const profile = {
+    email: user.email,
+    displayName: clean(extra.displayName || user.displayName || user.email, 120),
+    requestedOffice: clean(extra.office, 120) || '',
+    role: owner ? 'superadmin' : 'user',
+    active: owner,
+    createdAt: serverTimestamp(),
+  };
+  await setDoc(r, profile);
+  return { id: user.uid, ...profile };
+}
+
+export async function listUsers() {
+  const snap = await getDocs(collection(db, 'users'));
+  const rank = { superadmin: 0, admin: 1, records: 2, user: 3 };
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (rank[a.role] ?? 9) - (rank[b.role] ?? 9) || String(a.displayName || a.email).localeCompare(String(b.displayName || b.email)));
+}
+
+export const updateUser = (uid, patch) => updateDoc(doc(db, 'users', uid), patch);
+
+// ---------- settings ----------
+export async function getSettings() {
+  const s = await getDoc(doc(db, 'meta', 'settings'));
+  return s.exists() ? s.data() : {};
+}
+export const saveSettings = (settings, actor) => setDoc(doc(db, 'meta', 'settings'), { funds: settings.funds, updatedAt: nowIso(), updatedBy: actor.uid });
+
+// ---------- audit log ----------
+export function audit(actor, action, { entity = null, entityId = null, label = '', details = null } = {}) {
+  return addDoc(collection(db, 'audit'), {
+    action, entity, entityId, label: String(label || '').slice(0, 300),
+    details: details == null ? null : (typeof details === 'string' ? details : JSON.stringify(details)).slice(0, 2000),
+    uid: actor.uid, name: actor.displayName || actor.email, at: serverTimestamp(),
+  }).catch(() => {}); // never block the work on the log
+}
+
+export async function listAudit(max = 300) {
+  const snap = await getDocs(query(collection(db, 'audit'), orderBy('at', 'desc'), limit(max)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function auditOf(entityId) {
+  const snap = await getDocs(query(collection(db, 'audit'), where('entityId', '==', entityId), limit(200)));
+  const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
+  // the same person doing the same thing again in a row counts once (opening a record twice)
+  return list.filter((a, i) => !i || a.uid !== list[i - 1].uid || a.action !== list[i - 1].action || a.label !== list[i - 1].label);
+}
+
+// ---------- the record a row of the metadata grid becomes ----------
+function recordFields(row) {
+  const out = {};
+  for (const k of FIELDS) out[k] = clean(row[k], k === 'particulars' ? 2000 : 200);
+  out.amount = out.amount == null ? null : parseAmount(out.amount);
+  out.docDate = out.docDate == null ? null : normalizeDate(out.docDate);
+  out.refKey = out.refNo ? out.refNo.toLowerCase() : null;
+  return out;
+}
+
+// ---------- uploading a folder ----------
+
+// Reference nos. already in the archive (to warn before uploading).
+export async function existingRefs(docType, refNos) {
+  const keys = [...new Set(refNos.map((r) => String(r || '').trim().toLowerCase()).filter(Boolean))];
+  const found = [];
+  for (let i = 0; i < keys.length; i += 30) {
+    const snap = await getDocs(query(collection(db, 'records'), where('refKey', 'in', keys.slice(i, i + 30))));
+    snap.docs.forEach((d) => { if (d.data().docType === docType) found.push({ id: d.id, ...d.data() }); });
+  }
+  return found;
+}
+
+// The folder (batch) and its records, before any file is sent. Returns { batchId, ids: { groupKey: recordId } }.
+export async function createBatch(batch, rows, expectedFiles, actor) {
+  const year = Number(batch.fiscalYear) || null;
+  const b = {
+    folderName: clean(batch.folderName), docType: batch.docType, fiscalYear: year, month: Number(batch.month) || null,
+    fund: clean(batch.fund, 100), boxNo: clean(batch.boxNo, 60), location: clean(batch.location, 200), remarks: clean(batch.remarks, 2000),
+    status: 'uploading', expectedFiles, fileCount: 0, recordCount: rows.length, totalBytes: 0,
+    by: actor.uid, byName: actor.displayName || actor.email, createdAt: serverTimestamp(),
+  };
+  const batchRef = doc(collection(db, 'batches'));
+  await setDoc(batchRef, b);
+  const ids = {};
+  for (let i = 0; i < rows.length; i += 400) {
+    const wb = writeBatch(db);
+    for (const row of rows.slice(i, i + 400)) {
+      const r = doc(collection(db, 'records'));
+      const f = recordFields(row);
+      wb.set(r, {
+        batchId: batchRef.id, folderName: b.folderName, groupKey: clean(row.key, 500), docType: b.docType, ...f,
+        fund: b.fund, fiscalYear: year || (f.docDate ? Number(f.docDate.slice(0, 4)) : null), month: b.month,
+        boxNo: b.boxNo, location: b.location, files: [], fileCount: 0, keywords: keywordsOf(f),
+        createdBy: actor.uid, createdByName: b.byName, createdAt: serverTimestamp(),
+      });
+      ids[row.key] = r.id;
+    }
+    await wb.commit();
+  }
+  audit(actor, 'upload_folder', { entity: 'batch', entityId: batchRef.id, label: b.folderName, details: { records: rows.length, files: expectedFiles } });
+  return { batchId: batchRef.id, ids };
+}
+
+async function sha256(file) {
+  const buf = await file.arrayBuffer();
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(hash)].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+// One file into its record: Storage, then the record's file list, then the folder's totals.
+// onProgress(bytesSent). Returns { duplicateOf } (a record that already holds the same file).
+export async function uploadFile({ batchId, recordId, refNo, file, rel }, onProgress = () => {}) {
+  const hash = await sha256(file);
+  const known = await getDoc(doc(db, 'hashes', hash));
+  const duplicateOf = known.exists() && known.data().recordId !== recordId ? known.data() : null;
+  const path = `archives/${batchId}/${recordId}/${safePath(rel)}`;
+  const task = uploadBytesResumable(ref(storage, path), file, { contentType: file.type || contentTypeOf(rel), customMetadata: { sha256: hash } });
+  await new Promise((resolve, reject) => {
+    task.on('state_changed', (s) => onProgress(s.bytesTransferred), reject, resolve);
+  });
+  const name = rel.split('/').pop();
+  const entry = { name, rel, path, size: file.size, type: file.type || contentTypeOf(rel), sha256: hash, at: nowIso() };
+  await updateDoc(doc(db, 'records', recordId), {
+    files: arrayUnion(entry), fileCount: increment(1), keywords: arrayUnion(...keywordsOf({ files: [{ name }] }).slice(0, 100)),
+  });
+  await updateDoc(doc(db, 'batches', batchId), { fileCount: increment(1), totalBytes: increment(file.size) });
+  if (!known.exists()) await setDoc(doc(db, 'hashes', hash), { recordId, refNo: refNo || '', name, path, at: nowIso() }).catch(() => {});
+  return { duplicateOf };
+}
+
+export async function finishBatch(batchId) {
+  const b = (await getDoc(doc(db, 'batches', batchId))).data();
+  const status = b.fileCount >= b.expectedFiles ? 'complete' : 'incomplete';
+  await updateDoc(doc(db, 'batches', batchId), { status, updatedAt: nowIso() });
+  return { status, ...b };
+}
+
+// Files added later to a record (e.g. a missing attachment).
+export async function addFiles(record, files, actor, onProgress = () => {}) {
+  const results = [];
+  for (const [i, file] of files.entries()) {
+    onProgress(i, files.length, file.name);
+    results.push(await uploadFile({ batchId: record.batchId, recordId: record.id, refNo: record.refNo, file, rel: `added/${file.name}` }));
+  }
+  await updateDoc(doc(db, 'batches', record.batchId), { expectedFiles: increment(files.length) }).catch(() => {});
+  audit(actor, 'add_files', { entity: 'record', entityId: record.id, label: record.refNo, details: files.map((f) => f.name).join(', ') });
+  return results;
+}
+
+const EXT_TYPES = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  tif: 'image/tiff', tiff: 'image/tiff', txt: 'text/plain', csv: 'text/csv',
+  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+const contentTypeOf = (name) => EXT_TYPES[String(name).split('.').pop().toLowerCase()] || 'application/octet-stream';
+
+// ---------- reading ----------
+const withId = (d) => ({ id: d.id, ...d.data() });
+
+export async function getRecord(id) {
+  const s = await getDoc(doc(db, 'records', id));
+  if (!s.exists()) return null;
+  const r = withId(s);
+  // files arrive in the order their uploads finished: show them in folder order
+  r.files = [...(r.files || [])].sort((a, b) => a.rel.localeCompare(b.rel, undefined, { numeric: true }));
+  return r;
+}
+export async function getBatch(id) {
+  const s = await getDoc(doc(db, 'batches', id));
+  return s.exists() ? withId(s) : null;
+}
+export async function listBatches(max = 500) {
+  const snap = await getDocs(query(collection(db, 'batches'), orderBy('createdAt', 'desc'), limit(max)));
+  return snap.docs.map(withId);
+}
+export async function recordsOfBatch(batchId) {
+  const snap = await getDocs(query(collection(db, 'records'), where('batchId', '==', batchId)));
+  return snap.docs.map(withId).sort((a, b) => String(a.refNo || a.groupKey).localeCompare(String(b.refNo || b.groupKey), undefined, { numeric: true }));
+}
+
+export const SEARCH_LIMIT = 2000;
+
+// Search: Firestore narrows by one condition (a search word, else the year, else the type), so no
+// composite index is needed; every other filter is applied here. f: { q, type, year, fund, from, to, min, max }.
+export async function searchRecords(f) {
+  const words = wordsOf(f.q);
+  let q;
+  if (words.length) {
+    const longest = [...words].sort((a, b) => b.length - a.length)[0].slice(0, 20);
+    q = query(collection(db, 'records'), where('keywords', 'array-contains', longest), limit(SEARCH_LIMIT));
+  } else if (f.year) q = query(collection(db, 'records'), where('fiscalYear', '==', Number(f.year)), limit(SEARCH_LIMIT));
+  else if (f.type) q = query(collection(db, 'records'), where('docType', '==', f.type), limit(SEARCH_LIMIT));
+  else q = query(collection(db, 'records'), orderBy('createdAt', 'desc'), limit(SEARCH_LIMIT));
+  const snap = await getDocs(q);
+  const rows = snap.docs.map(withId).filter((r) => matchesWords(r, f.q)
+    && (!f.type || r.docType === f.type)
+    && (!f.year || r.fiscalYear === Number(f.year))
+    && (!f.fund || r.fund === f.fund)
+    && (!f.from || (r.docDate && r.docDate >= f.from))
+    && (!f.to || (r.docDate && r.docDate <= f.to))
+    && (f.min === '' || f.min == null || (r.amount != null && r.amount >= Number(f.min)))
+    && (f.max === '' || f.max == null || (r.amount != null && r.amount <= Number(f.max))));
+  return { rows, capped: snap.size >= SEARCH_LIMIT };
+}
+
+// Dashboard figures (aggregation queries: one read per 1,000 records).
+export async function stats() {
+  const recs = collection(db, 'records');
+  const year = new Date().getFullYear();
+  const years = Array.from({ length: 8 }, (_, i) => year - i);
+  const [records, batches, dv, bytes, byType, byYear, recent] = await Promise.all([
+    getCountFromServer(recs).then((s) => s.data().count),
+    getCountFromServer(collection(db, 'batches')).then((s) => s.data().count),
+    getAggregateFromServer(query(recs, where('docType', '==', 'DV')), { total: sum('amount') }).then((s) => s.data().total || 0),
+    getAggregateFromServer(collection(db, 'batches'), { b: sum('totalBytes'), f: sum('fileCount') }).then((s) => s.data()),
+    Promise.all(DOC_TYPES.map((t) => getCountFromServer(query(recs, where('docType', '==', t.code))).then((s) => ({ code: t.code, n: s.data().count })))),
+    Promise.all(years.map((y) => getCountFromServer(query(recs, where('fiscalYear', '==', y))).then((s) => ({ year: y, n: s.data().count })))),
+    listBatches(6),
+  ]);
+  return {
+    records, batches, dvAmount: dv, bytes: bytes.b || 0, files: bytes.f || 0,
+    byType: byType.filter((x) => x.n).sort((a, b) => b.n - a.n), byYear: byYear.filter((x) => x.n), recent,
+  };
+}
+
+// ---------- changing ----------
+export async function updateRecord(record, row, actor) {
+  const f = recordFields(row);
+  const changes = {};
+  for (const k of [...FIELDS]) if (String(record[k] ?? '') !== String(f[k] ?? '')) changes[k] = { from: record[k] ?? null, to: f[k] };
+  await updateDoc(doc(db, 'records', record.id), {
+    ...f, keywords: keywordsOf({ ...f, files: record.files }), updatedAt: nowIso(), updatedBy: actor.displayName || actor.email,
+  });
+  audit(actor, 'edit_record', { entity: 'record', entityId: record.id, label: f.refNo || record.refNo, details: changes });
+}
+
+export async function updateBatchLocation(batch, patch, actor) {
+  const p = { boxNo: clean(patch.boxNo, 60), location: clean(patch.location, 200), remarks: clean(patch.remarks, 2000) };
+  await updateDoc(doc(db, 'batches', batch.id), { ...p, updatedAt: nowIso() });
+  // the records keep a copy (shown in search results)
+  const recs = await recordsOfBatch(batch.id);
+  for (let i = 0; i < recs.length; i += 400) {
+    const wb = writeBatch(db);
+    recs.slice(i, i + 400).forEach((r) => wb.update(doc(db, 'records', r.id), { boxNo: p.boxNo, location: p.location, updatedAt: nowIso() }));
+    await wb.commit();
+  }
+  audit(actor, 'edit_folder', { entity: 'batch', entityId: batch.id, label: batch.folderName, details: p });
+}
+
+export async function deleteRecord(record, actor) {
+  for (const f of record.files || []) {
+    await deleteObject(ref(storage, f.path)).catch((e) => { if (e.code !== 'storage/object-not-found') throw e; });
+    const h = await getDoc(doc(db, 'hashes', f.sha256)).catch(() => null);
+    if (h?.exists() && h.data().recordId === record.id) await deleteDoc(h.ref);
+  }
+  await deleteDoc(doc(db, 'records', record.id));
+  const size = (record.files || []).reduce((s, f) => s + (f.size || 0), 0);
+  await updateDoc(doc(db, 'batches', record.batchId), {
+    recordCount: increment(-1), fileCount: increment(-(record.files || []).length),
+    totalBytes: increment(-size), expectedFiles: increment(-(record.files || []).length),
+  }).catch(() => {});
+  audit(actor, 'delete_record', { entity: 'record', entityId: record.id, label: record.refNo, details: { payee: record.payee, files: (record.files || []).length } });
+}
+
+export async function deleteFile(record, file, actor) {
+  await deleteObject(ref(storage, file.path)).catch((e) => { if (e.code !== 'storage/object-not-found') throw e; });
+  const h = await getDoc(doc(db, 'hashes', file.sha256)).catch(() => null);
+  if (h?.exists() && h.data().recordId === record.id) await deleteDoc(h.ref);
+  const files = (record.files || []).filter((f) => f.path !== file.path);
+  await updateDoc(doc(db, 'records', record.id), { files, fileCount: files.length, updatedAt: nowIso(), updatedBy: actor.displayName || actor.email });
+  await updateDoc(doc(db, 'batches', record.batchId), { fileCount: increment(-1), totalBytes: increment(-(file.size || 0)), expectedFiles: increment(-1) }).catch(() => {});
+  audit(actor, 'delete_file', { entity: 'record', entityId: record.id, label: file.rel });
+}
+
+// ---------- files ----------
+export const fileUrl = (path) => getDownloadURL(ref(storage, path));
+export const fileBlob = (path) => getBlob(ref(storage, path));
+
+// Saves a file: through the browser's download (needs the bucket's CORS, see README); if that is
+// not set up, the file opens in a new tab instead.
+export async function downloadFile(file) {
+  try {
+    const blob = await fileBlob(file.path);
+    saveBlob(blob, file.name);
+  } catch {
+    window.open(await fileUrl(file.path), '_blank', 'noopener');
+  }
+}
+
+export function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}

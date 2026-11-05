@@ -1,0 +1,28 @@
+{
+  "name": "candoni-archives",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Candoni Archives: digital archive of the Municipal Government of Candoni. Records are uploaded by folder with minimum metadata (DV No., date, payee, amount).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "local": "node scripts/local.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test src/lib/*.test.js",
+    "emulators": "npx -y firebase-tools@15.34.1 emulators:start --only auth,firestore,storage --project demo-archives",
+    "deploy:rules": "npx -y firebase-tools@15.34.1 deploy --only firestore:rules,firestore:indexes,storage",
+    "test:rules": "node scripts/test-rules.mjs"
+  },
+  "dependencies": {
+    "firebase": "^13.1.0",
+    "jszip": "^3.10.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^5.4.21"
+  }
+}

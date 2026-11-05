@@ -1,0 +1,153 @@
+rules_version = '2';
+
+// Candoni Archives, Municipal Government of Candoni.
+// Personal data is processed under the Data Privacy Act of 2012 (RA 10173).
+// Roles (src/lib/roles.js): superadmin > admin > records (Records Officer) > user (Viewer).
+// New accounts start inactive until an administrator approves them. The superadmin is the owner's
+// email below (keep it in sync with src/lib/owner.js); it is granted only once Firebase has
+// verified the address (Continue with Google, or the email verification link).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+    function me() {
+      return get(profilePath()).data;
+    }
+    function isActive() {
+      return signedIn() && exists(profilePath()) && me().active == true;
+    }
+    // Upload folders and edit metadata: the Records Officer and administrators.
+    function canUpload() {
+      return isActive() && me().role in ['superadmin', 'admin', 'records'];
+    }
+    // Approve users, delete records, Settings.
+    function isAdmin() {
+      return isActive() && me().role in ['superadmin', 'admin'];
+    }
+    function isSuper() {
+      return isActive() && me().role == 'superadmin';
+    }
+    function isOwnerEmail() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in ['npp@mgocandoniaccounting.org'];
+    }
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function str(v, max) {
+      return v is string && v.size() <= max;
+    }
+    function optStr(d, key, max) {
+      return !(key in d) || d[key] == null || str(d[key], max);
+    }
+    function docTypes() {
+      return ['DV', 'PAYROLL', 'PO', 'PR', 'OBR', 'JEV', 'LR', 'OR', 'CONTRACT', 'REPORT', 'OTHER'];
+    }
+
+    // ---- Accounts ----
+    match /users/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      // Signing up: a Viewer waiting for approval; the owner: the superadmin, already approved.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'displayName', 'requestedOffice', 'role', 'active', 'createdAt'])
+        && request.resource.data.email == request.auth.token.email
+        && str(request.resource.data.displayName, 120)
+        && optStr(request.resource.data, 'requestedOffice', 120)
+        && ((request.resource.data.role == 'user' && request.resource.data.active == false)
+          || (isOwnerEmail() && request.resource.data.role == 'superadmin' && request.resource.data.active == true));
+      allow update: if
+        // their own name
+        (signedIn() && request.auth.uid == uid && changed().hasOnly(['displayName']) && str(request.resource.data.displayName, 120))
+        // the owner, once their email is verified
+        || (signedIn() && request.auth.uid == uid && isOwnerEmail() && changed().hasOnly(['role', 'active'])
+          && request.resource.data.role == 'superadmin' && request.resource.data.active == true)
+        // an administrator approves, deactivates or changes the role of someone else; an Admin
+        // manages Records Officers and Viewers, the superadmin also Admins
+        || (isAdmin() && uid != request.auth.uid && resource.data.role != 'superadmin'
+          && (isSuper() || resource.data.role in ['records', 'user'])
+          && changed().hasOnly(['role', 'active', 'deactivated', 'approvedBy', 'approvedAt'])
+          && (request.resource.data.role in ['records', 'user'] || (isSuper() && request.resource.data.role == 'admin'))
+          && request.resource.data.active is bool);
+    }
+
+    // ---- Settings (funds) ----
+    match /meta/settings {
+      allow read: if isActive();
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly(['funds', 'updatedAt', 'updatedBy'])
+        && request.resource.data.funds is list && request.resource.data.funds.size() <= 50;
+    }
+
+    // ---- Uploaded folders ----
+    match /batches/{id} {
+      allow read: if isActive();
+      allow create: if canUpload()
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.keys().hasOnly(['folderName', 'docType', 'fiscalYear', 'month', 'fund', 'boxNo', 'location', 'remarks',
+          'status', 'expectedFiles', 'fileCount', 'recordCount', 'totalBytes', 'by', 'byName', 'createdAt'])
+        && str(request.resource.data.folderName, 200)
+        && request.resource.data.docType in docTypes()
+        && request.resource.data.status == 'uploading'
+        && request.resource.data.fileCount == 0 && request.resource.data.totalBytes == 0
+        && optStr(request.resource.data, 'boxNo', 60) && optStr(request.resource.data, 'location', 200)
+        && optStr(request.resource.data, 'remarks', 2000);
+      allow update: if canUpload()
+        && changed().hasOnly(['status', 'fileCount', 'recordCount', 'totalBytes', 'expectedFiles', 'boxNo', 'location', 'remarks', 'updatedAt'])
+        && request.resource.data.status in ['uploading', 'complete', 'incomplete']
+        && optStr(request.resource.data, 'boxNo', 60) && optStr(request.resource.data, 'location', 200)
+        && optStr(request.resource.data, 'remarks', 2000);
+      allow delete: if isAdmin();
+    }
+
+    // ---- Archived records (one document or transaction, with its files) ----
+    match /records/{id} {
+      allow read: if isActive();
+      allow create: if canUpload()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasOnly(['batchId', 'folderName', 'groupKey', 'docType', 'refNo', 'refKey', 'docDate', 'payee', 'amount',
+          'particulars', 'orsNo', 'checkNo', 'respCenter', 'fund', 'fiscalYear', 'month', 'boxNo', 'location', 'files', 'fileCount',
+          'keywords', 'createdBy', 'createdByName', 'createdAt'])
+        && request.resource.data.docType in docTypes()
+        && exists(/databases/$(database)/documents/batches/$(request.resource.data.batchId))
+        && request.resource.data.files.size() == 0 && request.resource.data.fileCount == 0
+        && optStr(request.resource.data, 'refNo', 120) && optStr(request.resource.data, 'payee', 200)
+        && optStr(request.resource.data, 'particulars', 2000)
+        && (request.resource.data.amount == null || request.resource.data.amount is number)
+        && request.resource.data.keywords is list && request.resource.data.keywords.size() <= 800;
+      allow update: if canUpload()
+        && changed().hasOnly(['refNo', 'refKey', 'docDate', 'payee', 'amount', 'particulars', 'orsNo', 'checkNo', 'respCenter',
+          'boxNo', 'location', 'files', 'fileCount', 'keywords', 'updatedAt', 'updatedBy'])
+        && optStr(request.resource.data, 'refNo', 120) && optStr(request.resource.data, 'payee', 200)
+        && optStr(request.resource.data, 'particulars', 2000)
+        && (request.resource.data.amount == null || request.resource.data.amount is number)
+        && request.resource.data.keywords.size() <= 800;
+      allow delete: if isAdmin();
+    }
+
+    // ---- File checksums (SHA-256): finds a file already in the archive ----
+    match /hashes/{sha} {
+      allow read: if isActive();
+      allow create: if canUpload()
+        && request.resource.data.keys().hasOnly(['recordId', 'refNo', 'name', 'path', 'at'])
+        && str(request.resource.data.recordId, 64) && str(request.resource.data.path, 1000);
+      allow delete: if isAdmin();
+    }
+
+    // ---- Audit log: who uploaded, viewed, downloaded, edited or deleted what. Never changed. ----
+    match /audit/{id} {
+      allow read: if canUpload();
+      allow create: if isActive()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.keys().hasOnly(['action', 'entity', 'entityId', 'label', 'details', 'uid', 'name', 'at'])
+        && str(request.resource.data.action, 40) && optStr(request.resource.data, 'details', 2000)
+        && optStr(request.resource.data, 'label', 300);
+    }
+  }
+}
