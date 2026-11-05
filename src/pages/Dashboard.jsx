@@ -44,7 +44,7 @@ export default function Dashboard() {
             <div className="stat"><span className="n">{s.files.toLocaleString()}</span><span className="l">Files</span></div>
             <Link className="stat" to="/folders"><span className="n">{s.batches.toLocaleString()}</span><span className="l">Folders uploaded</span></Link>
             <div className="stat"><span className="n">{bytes(s.bytes)}</span><span className="l">Storage used</span></div>
-            <Link className="stat" to="/archive?type=DV"><span className="n">{money(s.dvAmount)}</span><span className="l">Total of DVs archived</span></Link>
+            <Link className="stat" to="/archive?type=DV"><span className="n">{s.dvAmount == null ? '—' : money(s.dvAmount)}</span><span className="l">Total of DVs archived</span></Link>
           </div>
           <div className="grid-2">
             <div className="card">

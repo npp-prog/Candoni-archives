@@ -242,7 +242,9 @@ export async function stats() {
   const [records, batches, dv, bytes, byType, byYear, recent] = await Promise.all([
     getCountFromServer(recs).then((s) => s.data().count),
     getCountFromServer(collection(db, 'batches')).then((s) => s.data().count),
-    getAggregateFromServer(query(recs, where('docType', '==', 'DV')), { total: sum('amount') }).then((s) => s.data().total || 0),
+    // needs the composite index docType + amount (firestore.indexes.json); until it exists, the
+    // dashboard shows the other figures and this one as unavailable
+    getAggregateFromServer(query(recs, where('docType', '==', 'DV')), { total: sum('amount') }).then((s) => s.data().total || 0).catch(() => null),
     getAggregateFromServer(collection(db, 'batches'), { b: sum('totalBytes'), f: sum('fileCount') }).then((s) => s.data()),
     Promise.all(DOC_TYPES.map((t) => getCountFromServer(query(recs, where('docType', '==', t.code))).then((s) => ({ code: t.code, n: s.data().count })))),
     Promise.all(years.map((y) => getCountFromServer(query(recs, where('fiscalYear', '==', y))).then((s) => ({ year: y, n: s.data().count })))),

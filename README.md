@@ -52,6 +52,10 @@ and any custom domain.
 **Firestore Database** → Create database (production mode; region e.g. `asia-southeast1`).
 Then **Rules** → replace everything with the contents of [`firestore.rules`](firestore.rules) → **Publish**.
 
+Then **Indexes** → **Composite** → **Create index**: collection `records`, fields `docType` Ascending and
+`amount` Ascending, query scope Collection. (The dashboard's "Total of DVs archived" needs it; until it
+exists that figure shows "—". The error message on the dashboard also links straight to it.)
+
 ### 3. Storage
 **Storage** → Get started (Storage needs the Blaze plan; usage within the free quota costs nothing).
 Then **Rules** → replace everything with [`storage.rules`](storage.rules) → **Publish**. When Firebase
@@ -67,7 +71,7 @@ gsutil cors set cors.json gs://candoni-archives.firebasestorage.app
 
 Without this, previews still work, and Download opens the file in a new tab instead.
 
-*Shortcut for steps 2–3 (rules only):* `npx firebase-tools login`, then `npm run deploy:rules`.
+*Shortcut for steps 2–3 (rules and the index):* `npx firebase-tools login`, then `npm run deploy:rules`.
 
 ### 4. Netlify
 Netlify → **Add new site → Import an existing project** → GitHub → `npp-prog/Candoni-archives`.
