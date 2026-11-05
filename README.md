@@ -23,7 +23,8 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
      already archived or a file is identical to one in the archive (SHA-256).
 - **One folder per name, type and fund:** uploading a folder with the same name (ignoring capitals and spaces),
   main document type and fund as one already in the archive is refused; the wizard offers to add the files to
-  that folder instead. A folder's page also has **Upload more files**, which adds records to it.
+  that folder instead. A folder's page also has **Upload more files**, which adds records to it. The rules enforce
+  it too: each folder has a lock (`folderLocks`) named after its name, type and fund, created with it in one write.
 - **Search Archives**: by reference no., payee, particulars, OBR/check no. or file name, with
   filters for type, year, fund, date and amount, sortable columns and CSV export.
 - **Record page**: details, PDF/image preview, download, editing (Records Officer), adding
@@ -199,6 +200,7 @@ lifecycle.json           optional Storage rule: files to Coldline 90 days after 
 | `batches` | uploaded folder | type, fiscal year, month, fund, box no., location, counts, status |
 | `records` | document / transaction | DV No., date, payee, amount, particulars…, its files, search words |
 | `hashes` | file content (SHA-256) | the record that holds it (duplicate check) |
+| `folderLocks` | folder identity (name, type, fund) | the folder that holds it (one folder per identity) |
 | `audit` | action | who, what, when |
 | `meta/settings` | | funds |
 

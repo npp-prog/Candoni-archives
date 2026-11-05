@@ -118,3 +118,9 @@ export function csvCell(v) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 export const toCsv = (rows) => `﻿${rows.map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n`;
+
+// A folder's identity: its name (capitals and spaces ignored), main document type and fund. It names the
+// folder's lock (folderLocks/{id}), which keeps two folders from sharing it. firestore.rules computes the
+// same id (folderKeyOf): change both together. Only ASCII spaces count as spaces, as in the rules.
+const keyPart = (s) => String(s ?? '').toLowerCase().replace(/[ \t\n\r\f]+/g, ' ').replace(/^ | $/g, '').replace(/\//g, '_');
+export const folderLockId = (b) => `${keyPart(b.folderName)}|${b.docType}|${keyPart(b.fund)}`;

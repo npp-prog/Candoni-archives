@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalizeDate, parseAmount, parseName, detectYear, detectMonth, cellInvalid, rowProblems, groupKey, keywordsOf, matchesWords, csvCell, safePath,
+  normalizeDate, parseAmount, parseName, detectYear, detectMonth, cellInvalid, rowProblems, folderLockId, groupKey, keywordsOf, matchesWords, csvCell, safePath,
 } from './names.js';
 
 test('normalizeDate', () => {
@@ -69,4 +69,12 @@ test('search words', () => {
 test('csv and paths are safe', () => {
   assert.equal(csvCell('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"');
   assert.equal(safePath('a/../../b:c/d.pdf'), 'a/b c/d.pdf');
+});
+
+test('folder identity', () => {
+  const a = folderLockId({ folderName: 'DV2022-11-2133', docType: 'DV', fund: 'General Fund' });
+  assert.equal(a, 'dv2022-11-2133|DV|general fund');
+  assert.equal(folderLockId({ folderName: '  dv2022-11-2133 ', docType: 'DV', fund: 'General  Fund' }), a);
+  assert.notEqual(folderLockId({ folderName: 'DV2022-11-2133', docType: 'DV', fund: 'Trust Fund' }), a);
+  assert.equal(folderLockId({ folderName: 'Jan/Feb', docType: 'DV', fund: null }), 'jan_feb|DV|');
 });

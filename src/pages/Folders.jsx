@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
-import { audit, fileBlob, getBatch, listBatches, recordsOfBatch, saveBlob, updateBatchLocation } from '../lib/api.js';
+import { audit, ensureFolderLocks, fileBlob, getBatch, listBatches, recordsOfBatch, saveBlob, updateBatchLocation } from '../lib/api.js';
 import { typeName } from '../lib/doctypes.js';
 import { bytes, day, money, when } from '../lib/format.js';
 import { MONTHS, safeName, toCsv } from '../lib/names.js';
@@ -19,7 +19,13 @@ export default function Folders() {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
-  useEffect(() => { listBatches().then(setList).catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    listBatches().then((l) => {
+      setList(l);
+      // folders uploaded before folder locks existed get theirs (rules: one folder per name, type and fund)
+      if (canUpload) ensureFolderLocks(l).catch(() => {});
+    }).catch((e) => setError(e.message));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => (list || []).filter((b) => `${b.folderName} ${b.docType} ${b.fiscalYear} ${b.fund} ${b.boxNo} ${b.location} ${b.byName}`
     .toLowerCase().includes(q.toLowerCase())), [list, q]);
   return (
