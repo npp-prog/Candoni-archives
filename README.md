@@ -28,7 +28,8 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
 - **Search Archives**: by reference no., payee, particulars, OBR/check no. or file name, with
   filters for type, year, fund, date and amount, sortable columns and CSV export.
 - **Preview**: the eye button on a record (in a folder or in search results) shows its documents in a pop-up
-  beside its details, with Previous / Next through the list.
+  beside its details. Click or tap the right side of the document for the next one and the left side for the
+  previous one (or swipe, or use ← →). The next document is read ahead, so it opens at once.
 - **Record page**: details, PDF/image preview, download, editing (Records Officer), adding
   missing files, and history.
 - **Uploaded Folders**: each upload with where its paper is filed, its records, and a ZIP download. The person who

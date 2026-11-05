@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
 import RecordPeek from '../components/RecordPeek.jsx';
-import { audit, ensureFolderLocks, fileBlob, getBatch, listBatches, recordsOfBatch, saveBlob, updateFolder } from '../lib/api.js';
+import { audit, ensureFolderLocks, fileBytes, getBatch, listBatches, recordsOfBatch, saveBlob, updateFolder } from '../lib/api.js';
 import { DOC_TYPES, fundsOf, typeName } from '../lib/doctypes.js';
 import Select from '../components/Select.jsx';
 import { bytes, day, money, when } from '../lib/format.js';
@@ -110,7 +110,7 @@ export function FolderView() {
       const dir = safeName(`${r.refNo || r.groupKey || r.id}${r.payee ? ` ${r.payee}` : ''}`);
       for (const f of r.files || []) {
         setZip(`Adding ${++n} of ${count}: ${f.name}`);
-        try { z.file(`${dir}/${f.rel.split('/').map(safeName).join('/')}`, await fileBlob(f.path)); } catch (e) { failed.push(`${f.rel}: ${e.message}`); }
+        try { z.file(`${dir}/${f.rel.split('/').map(safeName).join('/')}`, await fileBytes(f.path)); } catch (e) { failed.push(`${f.rel}: ${e.message}`); }
       }
     }
     z.file('index.csv', toCsv([['Reference No.', 'Date', 'Payee', 'Amount', 'Particulars', 'Files'],

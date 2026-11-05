@@ -153,3 +153,18 @@
 .data-table td.peek-cell { width: 1%; padding-right: 0; }
 .data-table td.peek-cell .btn-icon { color: var(--primary); }
 .peek-fields .details { grid-template-columns: max-content minmax(0, 1fr); }
+
+/* a stored PDF this device cannot show in the page: a button opens it */
+.preview-open { display: grid; justify-items: center; gap: .6rem; padding-top: 18vh; }
+.preview-open p { margin: 0; }
+
+/* previous / next by clicking or tapping the left or right side of the document */
+.side-nav { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; cursor: pointer; }
+.side-arrow { position: absolute; top: 50%; z-index: 2; transform: translateY(-50%); width: 44px; height: 64px; border: 1px solid var(--line-2); border-radius: 12px;
+  background: rgba(255, 255, 255, .92); color: var(--ink); font-size: 2rem; line-height: 1; display: grid; place-items: center; box-shadow: var(--shadow);
+  opacity: .55; transition: opacity .15s, background .15s; }
+.side-arrow.left { left: .6rem; }
+.side-arrow.right { right: .6rem; }
+.side-nav:hover .side-arrow, .side-arrow:focus-visible { opacity: 1; }
+.side-arrow:hover { background: #fff; }
+@media (hover: none) { .side-arrow { opacity: .85; } }

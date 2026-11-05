@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import FilePreview from './FilePreview.jsx';
-import { audit, downloadFile } from '../lib/api.js';
+import SideNav from './SideNav.jsx';
+import { audit, downloadFile, fileUrl, prefetchFile } from '../lib/api.js';
 import { FIELDS, fieldLabel, typeName } from '../lib/doctypes.js';
 import { bytes, day, money } from '../lib/format.js';
 
@@ -17,15 +18,21 @@ export default function RecordPeek({ records, index, onIndex, onClose }) {
   const f = files[fileIndex] || files[0];
 
   useEffect(() => { setFileIndex(0); }, [index]);
+  // read the next and previous records' first files ahead, so Next and Previous open at once
+  useEffect(() => {
+    const first = (x) => [...(x?.files || [])].sort((a, b) => a.rel.localeCompare(b.rel, undefined, { numeric: true }))[0]?.path;
+    const t = setTimeout(() => { prefetchFile(first(records[index + 1])); prefetchFile(first(records[index - 1])); }, 400);
+    return () => clearTimeout(t);
+  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the other files of this record too
+  useEffect(() => { files.forEach((x, j) => { if (j !== fileIndex) prefetchFile(x.path); }); }, [r.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [openUrl, setOpenUrl] = useState('');
+  useEffect(() => { setOpenUrl(''); if (f) fileUrl(f.path).then(setOpenUrl).catch(() => {}); }, [f?.path]);
   useEffect(() => {
     if (f) audit(actor, 'view_file', { entity: 'record', entityId: r.id, label: f.rel });
   }, [r.id, f?.path]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
-      else if (e.key === 'ArrowLeft' && e.altKey && index > 0) onIndex(index - 1);
-      else if (e.key === 'ArrowRight' && e.altKey && index < records.length - 1) onIndex(index + 1);
-    };
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); }; // ← → : SideNav
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
@@ -51,9 +58,11 @@ export default function RecordPeek({ records, index, onIndex, onClose }) {
                 {files.map((x, j) => <button key={x.path} type="button" className={x === f ? 'active' : ''} onClick={() => setFileIndex(j)}>{x.name}</button>)}
               </div>
             )}
-            <div className="peek-viewer">
-              {f ? <FilePreview key={f.path} file={f} path={f.path} /> : <div className="empty">This record has no files yet.</div>}
-            </div>
+            <SideNav onPrev={index > 0 ? () => onIndex(index - 1) : null} onNext={index < records.length - 1 ? () => onIndex(index + 1) : null}>
+              <div className="peek-viewer">
+                {f ? <FilePreview key={f.path} file={f} path={f.path} /> : <div className="empty">This record has no files yet.</div>}
+              </div>
+            </SideNav>
           </div>
           <div className="peek-fields">
             <dl className="details">
@@ -64,6 +73,8 @@ export default function RecordPeek({ records, index, onIndex, onClose }) {
             {f && <p className="small muted">{f.rel} · {bytes(f.size)}</p>}
             <div className="row gap wrap">
               <Link className="btn btn-primary btn-sm" to={`/records/${r.id}`}><Icon name="eye" />Open record</Link>
+              {openUrl && <a className="btn btn-sm" href={openUrl} target="_blank" rel="noreferrer"
+                onClick={() => audit(actor, 'view_file', { entity: 'record', entityId: r.id, label: `${f.rel} (new tab)` })}><Icon name="eye" />Open in new tab</a>}
               {f && <button type="button" className="btn btn-sm" onClick={download}><Icon name="download" />Download</button>}
             </div>
           </div>
