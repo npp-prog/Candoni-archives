@@ -5,7 +5,7 @@ records **by folder**, with the minimum details of each one (DV No., date, payee
 Everyone approved can then search, preview and download them.
 
 Built like **DMS**: React + Vite, Firebase (Authentication, Firestore, Storage) and Netlify.
-It uses the same design: the DMS stylesheet, Inter font, municipal seal, icons and sign-in flow.
+It uses the same design: the DMS stylesheet (trimmed to what this app uses), Inter font, municipal seal, icons and sign-in flow.
 See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
 
 ## What it does
@@ -110,7 +110,7 @@ src/lib/api.js           everything that reads or writes Firestore and Storage
 src/lib/names.js         reading DV No./date/payee/amount from names, checks, search words, CSV
 src/lib/doctypes.js      document types and their required details (edit to customise)
 src/pages/Upload.jsx     the folder upload wizard
-src/styles.css           the DMS design (unchanged); src/archives.css: archive-specific parts
+src/styles.css           the DMS design (only the rules this app uses); src/archives.css: archive-specific parts
 firestore.rules          who may read and write what (keep roles in sync with src/lib/roles.js)
 storage.rules            the files: read by approved users, uploaded by the Records Officer, deleted by admins
 netlify.toml             build, SPA redirect, headers

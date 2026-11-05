@@ -41,7 +41,9 @@ export async function ensureUserProfile(user, extra = {}) {
 
 export async function listUsers() {
   const snap = await getDocs(collection(db, 'users'));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const rank = { superadmin: 0, admin: 1, records: 2, user: 3 };
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (rank[a.role] ?? 9) - (rank[b.role] ?? 9) || String(a.displayName || a.email).localeCompare(String(b.displayName || b.email)));
 }
 
 export const updateUser = (uid, patch) => updateDoc(doc(db, 'users', uid), patch);
@@ -69,12 +71,14 @@ export async function listAudit(max = 300) {
 
 export async function auditOf(entityId) {
   const snap = await getDocs(query(collection(db, 'audit'), where('entityId', '==', entityId), limit(200)));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+  const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
+  // the same person doing the same thing again in a row counts once (opening a record twice)
+  return list.filter((a, i) => !i || a.uid !== list[i - 1].uid || a.action !== list[i - 1].action || a.label !== list[i - 1].label);
 }
 
 // ---------- the record a row of the metadata grid becomes ----------
-export function recordFields(row) {
+function recordFields(row) {
   const out = {};
   for (const k of FIELDS) out[k] = clean(row[k], k === 'particulars' ? 2000 : 200);
   out.amount = out.amount == null ? null : parseAmount(out.amount);
@@ -127,7 +131,7 @@ export async function createBatch(batch, rows, expectedFiles, actor) {
   return { batchId: batchRef.id, ids };
 }
 
-export async function sha256(file) {
+async function sha256(file) {
   const buf = await file.arrayBuffer();
   const hash = await crypto.subtle.digest('SHA-256', buf);
   return [...new Uint8Array(hash)].map((x) => x.toString(16).padStart(2, '0')).join('');
@@ -179,14 +183,18 @@ const EXT_TYPES = {
   doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
-export const contentTypeOf = (name) => EXT_TYPES[String(name).split('.').pop().toLowerCase()] || 'application/octet-stream';
+const contentTypeOf = (name) => EXT_TYPES[String(name).split('.').pop().toLowerCase()] || 'application/octet-stream';
 
 // ---------- reading ----------
 const withId = (d) => ({ id: d.id, ...d.data() });
 
 export async function getRecord(id) {
   const s = await getDoc(doc(db, 'records', id));
-  return s.exists() ? withId(s) : null;
+  if (!s.exists()) return null;
+  const r = withId(s);
+  // files arrive in the order their uploads finished: show them in folder order
+  r.files = [...(r.files || [])].sort((a, b) => a.rel.localeCompare(b.rel, undefined, { numeric: true }));
+  return r;
 }
 export async function getBatch(id) {
   const s = await getDoc(doc(db, 'batches', id));

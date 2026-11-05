@@ -93,7 +93,7 @@ Browser (React SPA on Netlify) ──► Firebase Authentication   (sign-in, Goo
   indexes are needed.
 - **Dashboard figures** use Firestore aggregation queries (count and sum).
 - **Duplicates:** each file's SHA-256 is computed in the browser and stored in `hashes/{sha256}`.
-- **Same design as DMS:** `src/styles.css` is the DMS stylesheet, with the same Inter font, seal,
+- **Same design as DMS:** `src/styles.css` is the DMS stylesheet (trimmed to the rules used here), with the same Inter font, seal,
   icons, sign-in and approval pages. It also follows the DMS conventions: no sample values in
   fields, no description under page titles, and the searchable `Select` for dropdowns.
 
