@@ -82,6 +82,40 @@ superadmin, already approved. (If you sign up with email and password instead, o
 link first.) Others then sign up and wait under **Users → Waiting for approval**. Give the Records
 Officer the *Records Officer* role.
 
+## Keeping storage costs low (optional): Coldline for older files
+
+Archived files are rarely opened after they are uploaded. A **lifecycle rule** on the Storage bucket moves
+each file to the cheaper **Coldline** storage class 90 days after it was uploaded. The app needs no change:
+Coldline files open and download like any other.
+
+| | Standard | Coldline |
+|---|---|---|
+| Storing | about $0.020–0.026 per GB a month | about $0.004–0.005 per GB a month |
+| Opening or downloading | no extra fee | about $0.02 per GB extra |
+| Minimum time | none | 90 days (deleting earlier is billed as 90 days) |
+| 1 TB stored | about $20–27 a month | about $4–7 a month |
+
+Prices are approximate; see Google Cloud Storage pricing for the current figures.
+
+**In the Google Cloud console** (console.cloud.google.com, project **candoni-archives**):
+
+1. Menu (☰) → **Cloud Storage** → **Buckets** → **candoni-archives.firebasestorage.app**.
+2. **Lifecycle** tab → **Add a rule**.
+3. Action: **Set storage class to Coldline** → Continue.
+4. Conditions: **Age** `90` days (counted from the upload, not the date on the DV), **Storage class matches**
+   `Standard`, **Object name matches prefix** `archives/` → Continue → **Create**.
+
+**Or in Cloud Shell** (the `>_` button at the top of the console), with [`lifecycle.json`](lifecycle.json)
+from this repository:
+
+```bash
+gcloud storage buckets update gs://candoni-archives.firebasestorage.app --lifecycle-file=lifecycle.json
+```
+
+The rule runs about once a day; files show **Coldline** in the bucket's Storage class column within a day.
+To undo it, delete the rule in the Lifecycle tab (files already moved stay in Coldline, which is harmless).
+Set a budget alert too (Billing → **Budgets & alerts**), so unusual download costs are noticed early.
+
 ## Running it on your computer
 
 ```bash
@@ -116,6 +150,7 @@ src/styles.css           the DMS design (only the rules this app uses); src/arch
 firestore.rules          who may read and write what (keep roles in sync with src/lib/roles.js)
 storage.rules            the files: read by approved users, uploaded by the Records Officer, deleted by admins
 netlify.toml             build, SPA redirect, headers
+lifecycle.json           optional Storage rule: files to Coldline 90 days after upload (see above)
 ```
 
 ### Data
