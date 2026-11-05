@@ -1,13 +1,4 @@
 {
-  "indexes": [
-    {
-      "collectionGroup": "records",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "docType", "order": "ASCENDING" },
-        { "fieldPath": "amount", "order": "ASCENDING" }
-      ]
-    }
-  ],
+  "indexes": [],
   "fieldOverrides": []
 }
