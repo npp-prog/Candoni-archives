@@ -74,15 +74,18 @@ No indexes need to be created: every query uses Firestore's automatic indexes.
 Then **Rules** → replace everything with [`storage.rules`](storage.rules) → **Publish**. When Firebase
 asks to let Storage rules read Firestore (the roles are kept there), click **Allow**.
 
-**Downloads and ZIPs** need the bucket to allow the browser to fetch files (CORS). In the Google Cloud
-console, open **Cloud Shell** (the `>_` button at the top) and run:
+**Previews, downloads and ZIPs** read files through the site itself (`/storage-file`, a Netlify edge function in
+`netlify/edge-functions/storage-file.js`), so they work on any address (candoni-archives.netlify.app,
+archives.mgocandoni.com…) with no further setup. Optionally, let browsers read the bucket directly, which is a
+little faster and spares the site's bandwidth: in the Google Cloud console, open **Cloud Shell** (the `>_` button
+at the top) and run:
 
 ```bash
 echo '[{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]' > cors.json
 gsutil cors set cors.json gs://candoni-archives.firebasestorage.app
 ```
 
-Without this, previews still work, and Download opens the file in a new tab instead.
+(If CORS is already set for particular addresses only, add the site's new address to it, or use `"*"` as above.)
 
 *Shortcut for steps 2–3 (rules only):* `npx firebase-tools login`, then `npm run deploy:rules`, or set up
 [Publishing the rules automatically](#publishing-the-rules-automatically).
@@ -196,6 +199,7 @@ src/styles.css           the DMS design (only the rules this app uses); src/arch
 firestore.rules          who may read and write what (keep roles in sync with src/lib/roles.js)
 storage.rules            the files: read by approved users, uploaded by the Records Officer, deleted by admins
 netlify.toml             build, SPA redirect, headers
+netlify/edge-functions/  storage-file.js: reads stored files through the site (no bucket CORS needed)
 .github/workflows/       publish-rules.yml: publishes the rules when they change on main
 lifecycle.json           optional Storage rule: files to Coldline 90 days after upload (see above)
 ```

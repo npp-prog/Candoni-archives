@@ -463,6 +463,25 @@ export const fileUrl = (path) => {
   return urls.get(path);
 };
 
+// Reads a file from its download address: straight from Firebase when the bucket's CORS allows this
+// site; otherwise through the site itself (/storage-file, netlify/edge-functions/storage-file.js), which
+// needs no CORS. A failed CORS request fails at once, so the second try costs little.
+async function readFile(url) {
+  const get = async (u) => {
+    const r = await fetch(u);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    // the site's own page instead of the file: the proxy is not there (e.g. not deployed yet)
+    if ((r.headers.get('content-type') || '').includes('text/html')) throw new Error('The file could not be read.');
+    return r.arrayBuffer();
+  };
+  try {
+    return await get(url);
+  } catch (direct) {
+    if (!url.startsWith('https://firebasestorage.googleapis.com/')) throw direct; // local emulators: no proxy
+    return get(`/storage-file?u=${encodeURIComponent(url)}`);
+  }
+}
+
 // A file's bytes, for drawing it in the page, fetched straight from its download address: when the
 // bucket does not allow it (CORS not set) this fails at once instead of retrying for a quarter of a
 // minute as the Storage library does. The last files read are kept, so going back is instant, and
@@ -471,10 +490,7 @@ const kept = new Map(); // path → Promise<ArrayBuffer>
 const KEEP = 12;
 export function fileBytes(path) {
   if (kept.has(path)) { const p = kept.get(path); kept.delete(path); kept.set(path, p); return p; }
-  const p = fileUrl(path).then((u) => fetch(u)).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.arrayBuffer();
-  });
+  const p = fileUrl(path).then(readFile);
   p.catch(() => kept.delete(path));
   kept.set(path, p);
   while (kept.size > KEEP) kept.delete(kept.keys().next().value);
