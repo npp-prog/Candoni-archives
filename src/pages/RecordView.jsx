@@ -5,7 +5,7 @@ import Icon from '../components/Icon.jsx';
 import FilePreview from '../components/FilePreview.jsx';
 import Select from '../components/Select.jsx';
 import { addFiles, audit, auditOf, deleteFile, deleteRecord, downloadFile, fileUrl, getRecord, updateRecord } from '../lib/api.js';
-import { DOC_TYPES, FIELDS, fieldLabel, typeName, typeOf } from '../lib/doctypes.js';
+import { FIELDS, fieldLabel, typeChoices, typeName, typeOf } from '../lib/doctypes.js';
 import { bytes, day, isPreviewable, money, when } from '../lib/format.js';
 import { MONTHS, formatAmount, rowProblems } from '../lib/names.js';
 
@@ -108,7 +108,7 @@ export default function RecordView() {
                   <div className="field">
                     <label className="field-label" htmlFor="e-docType">Type of document <span className="req">*</span></label>
                     <Select id="e-docType" value={edit.docType} onChange={(e) => setEdit({ ...edit, docType: e.target.value })}>
-                      {DOC_TYPES.map((x) => <option key={x.code} value={x.code}>{x.supporting ? `${x.name} (supporting)` : x.name}</option>)}
+                      {typeChoices(edit.docType).map((x) => <option key={x.code} value={x.code}>{x.supporting ? `${x.name} (supporting)` : x.name}</option>)}
                     </Select>
                   </div>
                   {FIELDS.map((k) => (

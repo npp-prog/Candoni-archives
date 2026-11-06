@@ -148,6 +148,13 @@ await ok(deleteDoc(doc(owner.db, 'batches', b.id)), 'superadmin deletes a folder
 // Settings
 await denied(setDoc(doc(records.db, 'meta', 'settings'), { funds: ['X'] }), 'Records Officer edits settings');
 await ok(setDoc(doc(owner.db, 'meta', 'settings'), { funds: ['General Fund', 'Special Education Fund', 'Trust Fund'] }), 'superadmin edits settings');
+const types = [{ code: 'DV', name: 'Disbursement Voucher', refLabel: 'DV No.', required: ['refNo'], supporting: false, hidden: false }];
+await denied(setDoc(doc(records.db, 'meta', 'settings'), { docTypes: types }, { merge: true }), 'Records Officer edits the document types');
+await denied(setDoc(doc(owner.db, 'meta', 'settings'), { docTypes: [] }, { merge: true }), 'an empty list of document types');
+await ok(setDoc(doc(owner.db, 'meta', 'settings'), { docTypes: types, updatedAt: 'x', updatedBy: owner.uid }, { merge: true }), 'superadmin sets the document types');
+await ok(setDoc(doc(owner.db, 'meta', 'settings'), { funds: ['General Fund'] }, { merge: true }), 'funds saved, document types kept');
+assert.equal((await getDoc(doc(viewer.db, 'meta', 'settings'))).data().docTypes.length, 1);
+await ok(setDoc(doc(owner.db, 'meta', 'settings'), { funds: ['General Fund', 'Special Education Fund', 'Trust Fund'] }), 'back to the standard settings');
 
 // Users → Add user: added in advance, approved with that role on their first sign-in (email verified)
 const inv = (tag) => `${tag}${stamp}@archives.local`;

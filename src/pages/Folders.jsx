@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
 import RecordPeek from '../components/RecordPeek.jsx';
 import { audit, ensureFolderLocks, fileBytes, getBatch, listBatches, recordsOfBatch, saveBlob, updateFolder } from '../lib/api.js';
-import { DOC_TYPES, fundsOf, typeName } from '../lib/doctypes.js';
+import { fundsOf, typeChoices, typeName } from '../lib/doctypes.js';
 import Select from '../components/Select.jsx';
 import { bytes, day, money, when } from '../lib/format.js';
 import { MONTHS, safeName, toCsv } from '../lib/names.js';
@@ -146,7 +146,7 @@ export function FolderView() {
             <div className="fields one-col">
               <div><label className="field-label" htmlFor="ef-name">Folder name <span className="req">*</span></label><input id="ef-name" value={edit.folderName} onChange={set('folderName')} /></div>
               <div><label className="field-label" htmlFor="ef-type">Main document type <span className="req">*</span></label>
-                <Select id="ef-type" value={edit.docType} onChange={set('docType')}>{DOC_TYPES.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</Select></div>
+                <Select id="ef-type" value={edit.docType} onChange={set('docType')}>{typeChoices(edit.docType).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</Select></div>
               <div><label className="field-label" htmlFor="ef-year">Fiscal year</label>
                 <Select id="ef-year" value={edit.fiscalYear} onChange={set('fiscalYear')}><option value="">None</option>{years.map((y) => <option key={y} value={y}>{y}</option>)}</Select></div>
               <div><label className="field-label" htmlFor="ef-month">Month</label>

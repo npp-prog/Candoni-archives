@@ -123,8 +123,11 @@ service cloud.firestore {
     match /meta/settings {
       allow read: if isActive();
       allow write: if isAdmin()
-        && request.resource.data.keys().hasOnly(['funds', 'updatedAt', 'updatedBy'])
-        && request.resource.data.funds is list && request.resource.data.funds.size() <= 50;
+        && request.resource.data.keys().hasOnly(['funds', 'docTypes', 'updatedAt', 'updatedBy'])
+        && (!('funds' in request.resource.data) || (request.resource.data.funds is list && request.resource.data.funds.size() <= 50))
+        // Administration → Document Types (each code checked by its form when a record uses it)
+        && (!('docTypes' in request.resource.data) || (request.resource.data.docTypes is list
+          && request.resource.data.docTypes.size() > 0 && request.resource.data.docTypes.size() <= 100));
     }
 
     // ---- Uploaded folders ----

@@ -6,7 +6,7 @@ import Icon from '../components/Icon.jsx';
 import FilePreview from '../components/FilePreview.jsx';
 import SideNav from '../components/SideNav.jsx';
 import { addToBatch, createBatch, existingRefs, findSameFolder, finishBatch, getBatch, uploadFile } from '../lib/api.js';
-import { DOC_TYPES, FIELDS, FIELD_LABELS, fieldLabel, fundsOf, typeName, typeOf } from '../lib/doctypes.js';
+import { FIELDS, FIELD_LABELS, fieldLabel, fundsOf, typeChoices, typeName, typeOf } from '../lib/doctypes.js';
 import { bytes } from '../lib/format.js';
 import {
   MONTHS, SKIP_FILE, cellInvalid, detectMonth, detectYear, formatAmount, groupKey, normalizeDate, parseAmount, parseName, rowProblems,
@@ -223,7 +223,7 @@ function StepDetails({ w, update, go, funds }) {
           ) : <p className="help" style={{ marginTop: '-.5rem', marginBottom: '1rem' }}>These apply to every record in this folder.</p>}
           <fieldset className="fields plain-fieldset" disabled={locked}>
             <div><label className="field-label" htmlFor="dt">Main document type <span className="req">*</span></label>
-              <Select id="dt" disabled={locked} value={b.docType} onChange={set('docType')}>{DOC_TYPES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}</Select>
+              <Select id="dt" disabled={locked} value={b.docType} onChange={set('docType')}>{typeChoices(b.docType).map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}</Select>
               <div className="help">What the folder is filed as. You state the type of each document in it in step 4.</div></div>
             <div><label className="field-label" htmlFor="fy">Fiscal year <span className="req">*</span></label>
               <Select id="fy" disabled={locked} value={b.fiscalYear} onChange={set('fiscalYear')}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</Select></div>
@@ -437,7 +437,7 @@ function TypeSelect({ id, value, label, onChange }) {
   return (
     <Select id={id} value={value} aria-label={label} onChange={(e) => onChange(e.target.value)}>
       <option value="">Choose the type…</option>
-      {DOC_TYPES.map((x) => <option key={x.code} value={x.code}>{x.supporting ? `${x.name} (supporting)` : x.name}</option>)}
+      {typeChoices(value).map((x) => <option key={x.code} value={x.code}>{x.supporting ? `${x.name} (supporting)` : x.name}</option>)}
     </Select>
   );
 }

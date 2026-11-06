@@ -11,6 +11,7 @@ import Folders, { FolderView } from './pages/Folders.jsx';
 import Users from './pages/admin/Users.jsx';
 import AuditLog from './pages/admin/AuditLog.jsx';
 import Settings from './pages/admin/Settings.jsx';
+import DocumentTypes from './pages/admin/DocumentTypes.jsx';
 
 function Only({ when, children }) {
   return when ? children : <Navigate to="/" replace />;
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="admin/audit" element={<Only when={readsAudit}><AuditLog /></Only>} />
         <Route path="admin/users" element={<Only when={isAdmin}><Users /></Only>} />
         <Route path="admin/settings" element={<Only when={isAdmin}><Settings /></Only>} />
+        <Route path="admin/types" element={<Only when={isAdmin}><DocumentTypes /></Only>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

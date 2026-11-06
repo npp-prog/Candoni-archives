@@ -39,6 +39,8 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
 - **Users**: an admin can **Add user** (name, email, role): when that person signs in with that email (verified:
   Continue with Google, or the link Firebase emails), they have access at once. People who sign up on their own wait for approval. Roles: Superadmin (owner), Admin, Records Officer and Viewer.
 - **Audit Log**: who uploaded, viewed, downloaded, edited or deleted what. It is never changed.
+- **Document Types** (Administration): admins add document types, edit their names and required details, hide
+  types no longer used (records keep them), and remove types no record uses.
 - **Settings**: the list of funds.
 
 | Role | Search / view / download | Upload, edit details | Delete | Users, Settings | Audit log |
@@ -188,7 +190,7 @@ npm run build
 src/firebase-config.js   the Firebase project's web config
 src/lib/api.js           everything that reads or writes Firestore and Storage
 src/lib/names.js         reading DV No./date/payee/amount from names, checks, search words, CSV
-src/lib/doctypes.js      document types (main and supporting) and their required details (edit to customise)
+src/lib/doctypes.js      the standard document types; admins change the list in Administration → Document Types
 src/pages/Upload.jsx     the folder upload wizard
 src/styles.css           the DMS design (only the rules this app uses); src/archives.css: archive-specific parts
 firestore.rules          who may read and write what (keep roles in sync with src/lib/roles.js)
@@ -209,6 +211,6 @@ lifecycle.json           optional Storage rule: files to Coldline 90 days after 
 | `hashes` | file content (SHA-256) | the record that holds it (duplicate check) |
 | `folderLocks` | folder identity (name, type, fund) | the folder that holds it (one folder per identity) |
 | `audit` | action | who, what, when |
-| `meta/settings` | | funds |
+| `meta/settings` | | funds, document types (when an admin changed them) |
 
 Files: Storage `archives/{folder}/{record}/{path in the uploaded folder}`.
