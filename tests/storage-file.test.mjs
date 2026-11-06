@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import handler, { ALLOWED, config } from './storage-file.js';
+import handler, { ALLOWED, config } from '../netlify/edge-functions/storage-file.js';
 
 const file = `${ALLOWED}archives%2Fb1%2Fr1%2FDV.pdf?alt=media&token=abc`;
 const call = (u, method = 'GET') => handler(new Request(`https://archives.mgocandoni.com/storage-file?u=${encodeURIComponent(u)}`, { method }));
