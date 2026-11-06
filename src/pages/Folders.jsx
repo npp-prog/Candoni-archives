@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
 import RecordPeek from '../components/RecordPeek.jsx';
-import { audit, ensureFolderLocks, fileBytes, getBatch, listBatches, recordsOfBatch, saveBlob, updateFolder } from '../lib/api.js';
+import { DropPanel, MoveDialog } from '../components/MoveRecords.jsx';
+import { audit, deleteFolder, ensureFolderLocks, fileBytes, getBatch, listBatches, moveRecords, recordsOfBatch, saveBlob, updateFolder } from '../lib/api.js';
 import { fundsOf, typeChoices, typeName } from '../lib/doctypes.js';
 import Select from '../components/Select.jsx';
 import { bytes, day, money, when } from '../lib/format.js';
@@ -70,6 +71,10 @@ export function FolderView() {
   const [zip, setZip] = useState('');
   const [zipping, setZipping] = useState(false);
   const [peek, setPeek] = useState(null); // index of the record previewed
+  const [picked, setPicked] = useState(() => new Set()); // records chosen to move
+  const [dragging, setDragging] = useState(null); // ids of the records being dragged
+  const [moving, setMoving] = useState(null); // { ids, mode } : the Move dialog
+  const [moved, setMoved] = useState(null); // { n, to } : after moving
   const load = () => Promise.all([getBatch(id), recordsOfBatch(id)]).then(([bb, rr]) => { setB(bb); setRecs(rr); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -78,6 +83,26 @@ export function FolderView() {
 
   // Edit folder: the person who uploaded it, or an administrator (firestore.rules)
   const canEdit = canUpload && (b.by === user.uid || isAdmin);
+  // moving records out: the same people as Edit folder (firestore.rules)
+  const canMove = canEdit;
+  const pick = (id) => setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allPicked = recs.length > 0 && recs.every((r) => picked.has(r.id));
+  const recsOf = (ids) => recs.filter((r) => ids.includes(r.id));
+  const afterMove = async (to, n) => { setMoving(null); setDragging(null); setPicked(new Set()); await load(); setMoved({ n, to }); };
+  const dropOn = async (target) => {
+    const ids = dragging;
+    setDragging(null);
+    if (!ids?.length) return;
+    if (target === 'new') { setMoving({ ids, mode: 'new' }); return; }
+    if (!window.confirm(`Move ${ids.length} record${ids.length === 1 ? '' : 's'} to ${target.folderName}?`)) return;
+    try { await moveRecords(recsOf(ids), b, target, actor); await afterMove(target, ids.length); } catch (e) {
+      setMoved({ error: e.code === 'permission-denied' ? 'Not allowed to move these records.' : e.message });
+    }
+  };
+  const removeEmpty = async () => {
+    if (!window.confirm(`Delete the empty folder ${b.folderName}?`)) return;
+    try { await deleteFolder(b, actor); navigate('/folders'); } catch (e) { setMoved({ error: e.message }); }
+  };
   const startEdit = () => {
     setEditError('');
     setEdit({
@@ -183,12 +208,31 @@ export function FolderView() {
         </div>
       </div>
       <div className="card table-card">
-        <div className="card-head pad"><h3>Records in this folder</h3></div>
+        <div className="card-head pad"><h3>Records in this folder</h3>
+          {canMove && recs.length > 0 && <span className="small muted hide-sm">Drag records onto another folder, or tick them and use Move.</span>}</div>
+        {moved && (moved.error ? <div className="alert pad-x">{moved.error}</div>
+          : <div className="alert alert-ok pad-x">Moved {moved.n} record{moved.n === 1 ? '' : 's'} to <Link to={`/folders/${moved.to.id}`}>{moved.to.folderName}</Link>.</div>)}
+        {canMove && picked.size > 0 && (
+          <div className="pick-bar">
+            <b>{picked.size} selected</b>
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => setMoving({ ids: [...picked], mode: 'move' })}><Icon name="folder" />Move to folder…</button>
+            <button type="button" className="btn btn-sm" onClick={() => setMoving({ ids: [...picked], mode: 'new' })}><Icon name="plus" />New folder from these</button>
+            <button type="button" className="btn btn-sm" onClick={() => setPicked(new Set())}>Clear</button>
+          </div>
+        )}
         {recs.length ? (
           <table className="data-table clickable-rows">
-            <thead><tr><th aria-label="Preview" /><th>Type</th><th>Reference No.</th><th>Date</th><th>Payee</th><th>Particulars</th><th className="right">Amount</th><th className="right">Files</th></tr></thead>
+            <thead><tr>{canMove && <th className="pick-cell"><input type="checkbox" aria-label="Select all" checked={allPicked}
+              onChange={() => setPicked(allPicked ? new Set() : new Set(recs.map((r) => r.id)))} /></th>}<th aria-label="Preview" /><th>Type</th><th>Reference No.</th><th>Date</th><th>Payee</th><th>Particulars</th><th className="right">Amount</th><th className="right">Files</th></tr></thead>
             <tbody>{recs.map((r) => (
-              <tr key={r.id} onClick={() => navigate(`/records/${r.id}`)}>
+              <tr key={r.id} onClick={() => navigate(`/records/${r.id}`)} className={`${picked.has(r.id) ? 'picked' : ''}${dragging?.includes(r.id) ? ' dragged' : ''}`}
+                draggable={canMove} onDragStart={(e) => {
+                  const ids = picked.has(r.id) ? [...picked] : [r.id];
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', ids.join(','));
+                  setDragging(ids);
+                }} onDragEnd={() => setTimeout(() => setDragging(null), 0)}>
+                {canMove && <td className="pick-cell" onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.refNo || 'record'}`} checked={picked.has(r.id)} onChange={() => pick(r.id)} /></td>}
                 <td className="peek-cell"><button type="button" className="btn-icon" title="Preview the documents" aria-label={`Preview ${r.refNo || 'record'}`}
                   onClick={(e) => { e.stopPropagation(); setPeek(recs.indexOf(r)); }}><Icon name="eye" /></button></td>
                 <td><span className="badge badge-gold" title={typeName(r.docType)}>{r.docType}</span></td>
@@ -198,9 +242,13 @@ export function FolderView() {
               </tr>
             ))}</tbody>
           </table>
-        ) : <div className="empty">No records.</div>}
+        ) : (
+          <div className="empty">No records.{isAdmin && <div style={{ marginTop: '.7rem' }}><button className="btn btn-sm btn-danger" onClick={removeEmpty}><Icon name="trash" />Delete this empty folder</button></div>}</div>
+        )}
       </div>
       {peek != null && <RecordPeek records={recs} index={peek} onIndex={setPeek} onClose={() => setPeek(null)} />}
+      {dragging && <DropPanel count={dragging.length} from={b} onDrop={dropOn} />}
+      {moving && <MoveDialog records={recsOf(moving.ids)} from={b} mode={moving.mode} onClose={() => setMoving(null)} onDone={(to) => afterMove(to, moving.ids.length)} />}
     </div>
   );
 }

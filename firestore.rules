@@ -197,7 +197,12 @@ service cloud.firestore {
         && request.resource.data.keywords is list && request.resource.data.keywords.size() <= 800;
       allow update: if canUpload()
         && changed().hasOnly(['docType', 'refNo', 'refKey', 'docDate', 'payee', 'amount', 'particulars', 'orsNo', 'checkNo', 'respCenter',
-          'folderName', 'fund', 'fiscalYear', 'month', 'boxNo', 'location', 'files', 'fileCount', 'keywords', 'updatedAt', 'updatedBy'])
+          'batchId', 'folderName', 'fund', 'fiscalYear', 'month', 'boxNo', 'location', 'files', 'fileCount', 'keywords', 'updatedAt', 'updatedBy'])
+        // moved to another folder: by the person who uploaded the folder it leaves, or an administrator,
+        // into a folder that exists
+        && (request.resource.data.batchId == resource.data.batchId
+          || ((get(batchPath(resource.data.batchId)).data.by == request.auth.uid || isAdmin())
+            && exists(batchPath(request.resource.data.batchId))))
         && isTypeCode(request.resource.data.docType)
         && optStr(request.resource.data, 'refNo', 120) && optStr(request.resource.data, 'payee', 200)
         && optStr(request.resource.data, 'particulars', 2000)
