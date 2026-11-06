@@ -30,6 +30,7 @@ export default function Layout() {
       label: 'Administration',
       items: [
         readsAudit && ['/admin/audit', 'log', 'Audit Log'],
+        isAdmin && ['/admin/types', 'types', 'Document Types'],
         isAdmin && ['/admin/users', 'users', 'Users'],
         isAdmin && ['/admin/settings', 'settings', 'Settings'],
       ].filter(Boolean),

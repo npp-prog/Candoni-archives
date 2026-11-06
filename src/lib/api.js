@@ -91,7 +91,17 @@ export async function getSettings() {
   const s = await getDoc(doc(db, 'meta', 'settings'));
   return s.exists() ? s.data() : {};
 }
-export const saveSettings = (settings, actor) => setDoc(doc(db, 'meta', 'settings'), { funds: settings.funds, updatedAt: nowIso(), updatedBy: actor.uid });
+// Saves part of the settings ({ funds } or { docTypes }), keeping the rest.
+export const saveSettings = (patch, actor) => setDoc(doc(db, 'meta', 'settings'), { ...patch, updatedAt: nowIso(), updatedBy: actor.uid }, { merge: true });
+
+// How many records and folders use a document type (a type in use may be hidden, not removed).
+export async function typeUsage(code) {
+  const [records, folders] = await Promise.all([
+    getCountFromServer(query(collection(db, 'records'), where('docType', '==', code))).then((s) => s.data().count),
+    getCountFromServer(query(collection(db, 'batches'), where('docType', '==', code))).then((s) => s.data().count),
+  ]);
+  return { records, folders };
+}
 
 // ---------- audit log ----------
 export function audit(actor, action, { entity = null, entityId = null, label = '', details = null } = {}) {

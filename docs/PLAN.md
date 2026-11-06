@@ -88,8 +88,9 @@ the main document (e.g. the DV), or a supporting document. The details it needs 
 Optional for every type: Reference No., Particulars, OBR/ORS No., Check No., Resp. Center.
 Amounts are never added up: a DV and its supporting documents carry the same amount.
 
-The list of types and required fields lives in one place (`src/lib/doctypes.js`), so the office can
-change it easily. The rules accept any type code of 2–12 capital letters, so adding a type needs no
+Administrators change this list in **Administration → Document Types**: add a type, change its name or
+required details, hide one no longer used (its records keep it), or remove one no record uses. The standard
+list is in `src/lib/doctypes.js`; the office's own is kept in Firestore (`meta/settings.docTypes`). The rules accept any type code of 2–12 capital letters, so adding a type needs no
 rules change.
 
 ## 5. Architecture

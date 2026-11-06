@@ -168,3 +168,8 @@
 .side-nav:hover .side-arrow, .side-arrow:focus-visible { opacity: 1; }
 .side-arrow:hover { background: #fff; }
 @media (hover: none) { .side-arrow { opacity: .85; } }
+
+/* Administration → Document Types */
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .45rem 1rem; margin-top: .3rem; }
+.type-actions { flex-wrap: nowrap; justify-content: flex-end; }
+.data-table tr.type-hidden td { color: var(--muted); }

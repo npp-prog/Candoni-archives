@@ -6,6 +6,7 @@ import {
 import { auth } from '../firebase.js';
 import { ensureUserProfile, getSettings } from '../lib/api.js';
 import { canUpload, isAdminRole, readsAudit } from '../lib/roles.js';
+import { setDocTypes } from '../lib/doctypes.js';
 
 const AuthContext = createContext(null);
 
@@ -22,7 +23,11 @@ export function AuthProvider({ children }) {
     const p = await ensureUserProfile(firebaseUser, pendingProfile.current || {});
     pendingProfile.current = null;
     setProfile(p);
-    if (p.active) setSettings(await getSettings().catch(() => ({})));
+    if (p.active) {
+      const s = await getSettings().catch(() => ({}));
+      setDocTypes(s.docTypes); // the document types an administrator set, or the standard list
+      setSettings(s);
+    }
     return p;
   }, []);
 

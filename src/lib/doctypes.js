@@ -1,6 +1,6 @@
 // Document types and the metadata each one must have. Keep the codes in sync with firestore.rules
 // (records: docType). Field keys: refNo, docDate, payee, amount, particulars, orsNo, checkNo, respCenter.
-export const DOC_TYPES = [
+export const STANDARD_TYPES = [
   // main documents
   { code: 'DV', name: 'Disbursement Voucher', refLabel: 'DV No.', required: ['refNo', 'docDate', 'payee', 'amount'] },
   { code: 'PAYROLL', name: 'Payroll', refLabel: 'Payroll No.', required: ['refNo', 'docDate', 'amount'] },
@@ -22,8 +22,28 @@ export const DOC_TYPES = [
   { code: 'CERT', name: 'Certification', refLabel: 'Reference No.', required: ['docDate'], supporting: true },
   { code: 'OTHER', name: 'Other supporting document', refLabel: 'Reference No.', required: [], supporting: true },
 ];
-export const MAIN_TYPES = DOC_TYPES.filter((t) => !t.supporting);
-export const isType = (code) => DOC_TYPES.some((t) => t.code === code);
+
+// The list in use: the one an administrator saved (Administration → Document Types, kept in
+// meta/settings.docTypes), or the standard list. A live binding: setDocTypes updates it for every module.
+export let DOC_TYPES = STANDARD_TYPES;
+export function setDocTypes(list) {
+  DOC_TYPES = Array.isArray(list) && list.length ? list : STANDARD_TYPES;
+}
+// Offered when uploading or editing: the types not hidden, and the current one even if it is hidden.
+export const typeChoices = (current = '') => DOC_TYPES.filter((t) => !t.hidden || t.code === current);
+
+// A type code: 2 to 12 capital letters (the same check as isTypeCode in firestore.rules).
+export const TYPE_CODE = /^[A-Z]{2,12}$/;
+// What is wrong with a type about to be saved ('' when nothing): list is the list it goes into; isNew
+// when it is added (its code must then be new).
+export function typeProblem(t, list, isNew) {
+  if (!TYPE_CODE.test(t.code || '')) return 'The code must be 2 to 12 capital letters, with no spaces.';
+  if (isNew && list.some((x) => x.code === t.code)) return `The code ${t.code} is already used.`;
+  if (!String(t.name || '').trim()) return 'Enter the name of the document type.';
+  if (String(t.name).length > 80 || String(t.refLabel || '').length > 40) return 'The name or the reference no. label is too long.';
+  if ((t.required || []).some((k) => !FIELDS.includes(k))) return 'Unknown required detail.';
+  return '';
+}
 
 export const DEFAULT_FUNDS = ['General Fund', 'Special Education Fund', 'Trust Fund'];
 export const fundsOf = (settings) => (settings?.funds?.length ? settings.funds : DEFAULT_FUNDS);
@@ -34,6 +54,7 @@ export const FIELD_LABELS = {
   orsNo: 'OBR/ORS No.', checkNo: 'Check No.', respCenter: 'Resp. Center',
 };
 
-export const typeOf = (code) => DOC_TYPES.find((t) => t.code === code) || DOC_TYPES[DOC_TYPES.length - 1];
+// A code no longer in the list (removed by an administrator) still shows, with nothing required.
+export const typeOf = (code) => DOC_TYPES.find((t) => t.code === code) || { code: code || '', name: code || 'Unknown type', refLabel: 'Reference No.', required: [] };
 export const typeName = (code) => typeOf(code).name;
 export const fieldLabel = (code, key) => (key === 'refNo' ? typeOf(code).refLabel : FIELD_LABELS[key]);
