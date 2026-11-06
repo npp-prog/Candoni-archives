@@ -183,6 +183,19 @@ await denied(updateDoc(doc(early.db, 'users', early.uid), { role: 'records', act
 await ok(updateDoc(doc(early.db, 'users', early.uid), { role: 'user', active: true, displayName: 'Early', approvedBy: 'x', approvedAt: 'x' }), 'waiting, then added: approved with the given role');
 await ok(deleteDoc(doc(owner.db, 'invites', inv('b'))), 'admin removes an added user');
 
+// Moving records between folders: the uploader of the folder they leave, or an administrator
+const f1 = await ok(createFolder(records.db, batchData(records.uid, { folderName: `${RUN} move from` })), 'folder to move from');
+const f2 = await ok(createFolder(owner.db, batchData(owner.uid, { folderName: `${RUN} move to` })), 'folder to move to');
+const mv = await ok(addDoc(collection(records.db, 'records'), recordData(records.uid, f1.id)), 'a record to move');
+await denied(updateDoc(doc(stranger.db, 'records', mv.id), { batchId: f2.id, folderName: 'x' }), 'another Records Officer moves a record out of a folder they did not upload');
+await denied(updateDoc(doc(records.db, 'records', mv.id), { batchId: 'no-such-folder' }), 'move into a folder that does not exist');
+await ok(updateDoc(doc(records.db, 'records', mv.id), { batchId: f2.id, folderName: `${RUN} move to`, updatedAt: 'x' }), 'the uploader moves a record to another folder');
+await ok(updateDoc(doc(records.db, 'batches', f2.id), { recordCount: 2, updatedAt: 'x' }), 'the counts of the folder moved to');
+await ok(updateDoc(doc(owner.db, 'records', mv.id), { batchId: f1.id, folderName: `${RUN} move from`, updatedAt: 'x' }), 'an administrator moves it back');
+await ok(deleteDoc(doc(owner.db, 'records', mv.id)), 'clean up the moved record');
+await ok(deleteDoc(doc(owner.db, 'batches', f2.id)), 'an administrator deletes an empty folder');
+await ok(deleteDoc(doc(owner.db, 'folderLocks', folderLockId(batchData(owner.uid, { folderName: `${RUN} move to` })))), 'and its lock');
+
 assert.ok(true);
 console.log('All rules checks passed.');
 process.exit(0);

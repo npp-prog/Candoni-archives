@@ -391,6 +391,54 @@ export async function updateRecord(record, row, actor) {
   audit(actor, 'edit_record', { entity: 'record', entityId: record.id, label: f.refNo || record.refNo, details: changes });
 }
 
+// Moves records to another folder (the uploader of the folder they leave, or an administrator). They
+// take the new folder's details they keep a copy of; both folders' counts follow. Their files stay
+// where they are in Storage (a record keeps its files' paths), so nothing is uploaded again.
+export async function moveRecords(records, from, to, actor) {
+  if (!records.length || from.id === to.id) return;
+  const files = records.reduce((n, r) => n + (r.files || []).length, 0);
+  const size = records.reduce((n, r) => n + (r.files || []).reduce((m, f) => m + (f.size || 0), 0), 0);
+  const by = actor.displayName || actor.email;
+  for (let i = 0; i < records.length; i += 400) {
+    const wb = writeBatch(db);
+    records.slice(i, i + 400).forEach((r) => wb.update(doc(db, 'records', r.id), {
+      batchId: to.id, folderName: to.folderName, fund: to.fund || null, fiscalYear: to.fiscalYear || r.fiscalYear || null,
+      month: to.month || null, boxNo: to.boxNo || null, location: to.location || null, updatedAt: nowIso(), updatedBy: by,
+    }));
+    if (i + 400 >= records.length) {
+      wb.update(doc(db, 'batches', from.id), {
+        recordCount: increment(-records.length), fileCount: increment(-files), expectedFiles: increment(-files), totalBytes: increment(-size), updatedAt: nowIso(),
+      });
+      wb.update(doc(db, 'batches', to.id), {
+        recordCount: increment(records.length), fileCount: increment(files), expectedFiles: increment(files), totalBytes: increment(size), updatedAt: nowIso(),
+        ...(to.status === 'uploading' && !to.recordCount ? { status: 'complete' } : {}),
+      });
+    }
+    await wb.commit();
+  }
+  const label = records.map((r) => r.refNo || r.groupKey).join(', ').slice(0, 280);
+  audit(actor, 'move_records', { entity: 'batch', entityId: from.id, label: `${from.folderName} → ${to.folderName}`, details: label });
+  audit(actor, 'move_records', { entity: 'batch', entityId: to.id, label: `${from.folderName} → ${to.folderName}`, details: label });
+}
+
+// A new, empty folder (to move records into). Refused like an upload when the same folder exists.
+export async function createFolder(fields, actor) {
+  const { batchId } = await createBatch(fields, [], 0, actor);
+  return getBatch(batchId);
+}
+
+// An empty folder (administrators), with its lock.
+export async function deleteFolder(batch, actor) {
+  const left = await recordsOfBatch(batch.id);
+  if (left.length) throw new Error('This folder still has records.');
+  const wb = writeBatch(db);
+  wb.delete(doc(db, 'batches', batch.id));
+  const lock = await getDoc(doc(db, 'folderLocks', folderLockId(batch)));
+  if (lock.exists() && lock.data().batchId === batch.id) wb.delete(lock.ref);
+  await wb.commit();
+  audit(actor, 'delete_folder', { entity: 'batch', entityId: batch.id, label: batch.folderName });
+}
+
 // Edit folder (its uploader or an administrator). A new name, type or fund must not match another folder
 // (code 'folder-exists'), and moves the folder's lock in the same write. Its records take the new
 // details they keep a copy of (name, fund, year, month, where filed).

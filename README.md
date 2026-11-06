@@ -27,6 +27,9 @@ See [docs/PLAN.md](docs/PLAN.md) for the plan, metadata standard and roadmap.
   it too: each folder has a lock (`folderLocks`) named after its name, type and fund, created with it in one write.
 - **Search Archives**: by reference no., payee, particulars, OBR/check no. or file name, with
   filters for type, year, fund, date and amount, sortable columns and CSV export.
+- **Move records between folders**: on a folder's page, its uploader or an admin drags records onto another folder
+  (or onto **New folder**), or ticks them and uses **Move to folder…** / **New folder from these**. Moved records take
+  the new folder's details; the files stay where they are in Storage. An admin can delete a folder left empty.
 - **Preview**: the eye button on a record (in a folder or in search results) shows its documents in a pop-up
   beside its details. Click or tap the right side of the document for the next one and the left side for the
   previous one (or swipe, or use ← →). The next document is read ahead, so it opens at once.
