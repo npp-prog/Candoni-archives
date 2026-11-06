@@ -49,7 +49,7 @@ export default function FilePreview({ file, local = null, path = null }) {
       <div className="empty preview-open">
         <p>This device cannot show the PDF here.</p>
         <a className="btn btn-primary" href={url} target="_blank" rel="noreferrer">Open the PDF</a>
-        <p className="help">An administrator can make PDFs show here on every device: README, step 3 (Storage CORS).</p>
+        <p className="help">If this keeps happening, tell an administrator (README, step 3).</p>
       </div>
     );
   }

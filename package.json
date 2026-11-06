@@ -9,7 +9,7 @@
     "local": "node scripts/local.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/lib/*.test.js",
+    "test": "node --test src/lib/*.test.js netlify/edge-functions/*.test.mjs",
     "emulators": "npx -y firebase-tools@15.34.1 emulators:start --only auth,firestore,storage --project demo-archives",
     "deploy:rules": "npx -y firebase-tools@15.34.1 deploy --only firestore:rules,firestore:indexes,storage",
     "test:rules": "node scripts/test-rules.mjs"
