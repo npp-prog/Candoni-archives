@@ -81,8 +81,8 @@ export default function Login() {
       <div className="landing-hero">
         <div className="landing-copy">
           <h1>Every record, kept and found.</h1>
-          <p>Disbursement vouchers, payrolls, purchase orders and every other record of the Municipal Government of Candoni,
-            uploaded folder by folder and found in seconds by DV No., payee or amount.</p>
+          <p>The records of the Municipal Government of Candoni, preserved in one secure place: filed folder by folder,
+            kept with their details, and found in seconds whenever they are needed.</p>
           <div className="pillars"><span>ACCOUNTABILITY.</span><span>TRANSPARENCY.</span><span>SERVICE.</span></div>
         </div>
         <section className="auth-panel">
